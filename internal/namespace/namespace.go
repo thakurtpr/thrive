@@ -5,6 +5,7 @@ package namespace
 
 import (
 	"fmt"
+	"os"
 
 	"golang.org/x/sys/unix"
 )
@@ -16,49 +17,47 @@ type UserNamespaceOptions struct {
 }
 
 // CreateUserNamespace creates a new user namespace with optional UID/GID mapping.
-func CreateUserNamespace(opts UserNamespaceOptions) (uintptr, error) {
-	fd, err := unix.Unshare(unix.CLONE_NEWUSER)
+func CreateUserNamespace(opts UserNamespaceOptions) error {
+	err := unix.Unshare(unix.CLONE_NEWUSER)
 	if err != nil {
-		return 0, fmt.Errorf("namespace.CreateUserNamespace: unshare CLONE_NEWUSER: %w", err)
+		return fmt.Errorf("namespace.CreateUserNamespace: unshare CLONE_NEWUSER: %w", err)
 	}
 
 	if opts.UIDMap != "" {
-		if err := unix.WriteFile("/proc/self/uid_map", []byte(opts.UIDMap), 0644); err != nil {
-			unix.Close(int(fd))
-			return 0, fmt.Errorf("namespace.CreateUserNamespace: write uid_map: %w", err)
+		if err := os.WriteFile("/proc/self/uid_map", []byte(opts.UIDMap), 0644); err != nil {
+			return fmt.Errorf("namespace.CreateUserNamespace: write uid_map: %w", err)
 		}
 	}
 
 	if opts.GIDMap != "" {
-		if err := unix.WriteFile("/proc/self/setgroups", []byte("deny"), 0644); err != nil {
+		if err := os.WriteFile("/proc/self/setgroups", []byte("deny"), 0644); err != nil {
 			// Ignore error if setgroups doesn't exist
 		}
-		if err := unix.WriteFile("/proc/self/gid_map", []byte(opts.GIDMap), 0644); err != nil {
-			unix.Close(int(fd))
-			return 0, fmt.Errorf("namespace.CreateUserNamespace: write gid_map: %w", err)
+		if err := os.WriteFile("/proc/self/gid_map", []byte(opts.GIDMap), 0644); err != nil {
+			return fmt.Errorf("namespace.CreateUserNamespace: write gid_map: %w", err)
 		}
 	}
 
-	return fd, nil
+	return nil
 }
 
 // CloneFlags returns the set of clone flags needed for a container.
-func CloneFlags(network, pid, mount, uts, ipc bool) int {
-	flags := 0
+func CloneFlags(network, pid, mount, uts, ipc bool) uintptr {
+	flags := uintptr(0)
 	if network {
-		flags |= unix.CLONE_NEWNET
+		flags |= uintptr(unix.CLONE_NEWNET)
 	}
 	if pid {
-		flags |= unix.CLONE_NEWPID
+		flags |= uintptr(unix.CLONE_NEWPID)
 	}
 	if mount {
-		flags |= unix.CLONE_NEWNS
+		flags |= uintptr(unix.CLONE_NEWNS)
 	}
 	if uts {
-		flags |= unix.CLONE_NEWUTS
+		flags |= uintptr(unix.CLONE_NEWUTS)
 	}
 	if ipc {
-		flags |= unix.CLONE_NEWIPC
+		flags |= uintptr(unix.CLONE_NEWIPC)
 	}
 	return flags
 }

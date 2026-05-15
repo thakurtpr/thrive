@@ -47,12 +47,12 @@ func Watch(pid int, policy Policy) error {
 }
 
 // ExecInContainer runs a command in a new namespace set.
-func ExecInContainer(command []string, cloneFlags int) (int, error) {
+func ExecInContainer(command []string, cloneFlags uintptr) (int, error) {
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags:   uint64(cloneFlags),
-		UidMappings:  []syscall.SysProcAttrMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}},
-		GidMappings:  []syscall.SysProcAttrMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
+		Cloneflags:   cloneFlags,
+		UidMappings:  []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}},
+		GidMappings:  []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
 	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
