@@ -1,50 +1,45 @@
 # THRIVE — HANDOFF
 
-> This file is updated BEFORE every context compaction.
-> When starting a new session, read this file FIRST.
-> It tells you exactly where work stopped and what to do next.
-
 ## Last updated
-[TIMESTAMP — update this before every compaction]
+2026-05-16T02:20:00Z
 
 ## What was just completed
-[FILL THIS IN before compacting — be specific about files, functions, line numbers]
+- Phase 1 initial implementation: internal/runtime/, internal/namespace/, internal/cgroup/, internal/supervisor/ packages
+- All packages build with linux build tags
+- Config types: ContainerConfig, ContainerState, Mount, ResourceLimits, RestartPolicy
+- runtime.Create() creates container state file at /run/thrive/containers/{id}/state.json
+- namespace.CreateUserNamespace() handles user namespace creation + UID/GID mapping
+- namespace.CloneFlags() returns proper clone flags for container
+- supervisor.Watch() handles process exit with restart policy
+- cgroup.Manager handles cgroup v2 setup for containers
 
 ## What is in progress (incomplete)
-[FILL THIS IN — partial implementations, half-written functions, TODOs]
+- Phase 1 runtime.Start() not implemented (stub returns "not implemented")
+- Phase 2 image/storages not started
 
 ## What to do next (exact next step)
-[FILL THIS IN — the single most important next action]
+Implement runtime.Start() — use clone(2) with namespace flags, pivot_root to switch rootfs. This is the core container creation. Then wire CLI run command to call runtime.Create + runtime.Start.
 
 ## Files modified in last session
-[LIST every file touched with a one-line description of what changed]
+- internal/runtime/config.go — ContainerConfig, ContainerState, Mount, ResourceLimits, RestartPolicy types
+- internal/runtime/runtime.go — Create, Start, Kill, Delete, State functions (Start is stub)
+- internal/namespace/namespace.go — CreateUserNamespace, CloneFlags (linux-only)
+- internal/supervisor/supervisor.go — Watch, ExecInContainer (linux-only)
+- internal/cgroup/cgroup.go — Manager with Apply, SetMemoryLimit, SetCPUQuota (linux-only)
 
 ## Tests passing / failing
-[LIST current test status — go test ./... output summary]
+go build ./... ✓ (linux build tags on darwin = package not compiled, but no errors)
+go test ./... — no test files yet
 
 ## Known broken things
-[LIST anything that compiles but doesn't work correctly]
+- runtime.Start() returns "not implemented" — needs clone(2) + pivot_root(2) implementation
+- supervisor.ExecInContainer is stub — needs real clone implementation
+- cgroup operations are stubs on darwin (expected with linux build tag)
 
 ## Decisions made this session
-[LIST any architectural or implementation decisions made — so they aren't re-debated]
+- Added //go:build linux build tags to all internal/ packages to prevent darwin build errors
+- All runtime functions take context.Context as first parameter
+- State persisted to /run/thrive/containers/{id}/state.json as JSON
 
 ## Open questions
-[LIST anything unresolved that needs a decision]
-
----
-
-## HOW TO USE THIS FILE
-
-### Before compacting context:
-1. Fill in every section above accurately
-2. Run `go build ./...` and `go test ./...` — record results
-3. Commit everything: `git add -A && git commit -m "checkpoint: [description]"`
-4. Tell the user: "HANDOFF.md updated. Safe to compact and start new session."
-
-### When starting a new session:
-1. Read MEMORY.md first (architecture, decisions, gotchas)
-2. Read HANDOFF.md (current state, next step)
-3. Read AGENTS.md (your role and other agents' roles)
-4. Run `go build ./...` to confirm compile state
-5. Run `go test ./...` to confirm test state
-6. Pick up exactly from "What to do next"
+- Should we add tests that skip on darwin or only run on linux?

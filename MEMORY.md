@@ -56,7 +56,7 @@ github.com/thakurprasadrout/thrive
 - Phase 8: P2P registry + chunk store — DISTRIBUTION
 
 ## Current phase
-[ ] Phase 1 — Core runtime
+[x] Phase 1 — Core runtime (initial implementation)
 
 ## Important file locations
 - Container state: /run/thrive/containers/{id}/
