@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/thakurprasadrout/thrive/internal/secrets"
 	"github.com/thakurprasadrout/thrive/internal/telemetry"
 )
 
@@ -146,6 +147,13 @@ func Start(ctx context.Context, id string) error {
 	}
 	telemetry.Debug("runtime.Start: SysProcAttr configured", telemetry.FieldInt("cloneflags", syscall.CLONE_NEWPID|syscall.CLONE_NEWNS|syscall.CLONE_NEWUTS|syscall.CLONE_NEWIPC))
 
+	if len(cfg.Secrets) > 0 {
+		log.Info("runtime.Start: injecting secrets", telemetry.FieldString("containerID", id), telemetry.FieldInt("count", len(cfg.Secrets)))
+		if err := secrets.Inject(id, cfg.Secrets); err != nil {
+			log.Error("runtime.Start: secrets.Inject failed", telemetry.FieldString("containerID", id), telemetry.FieldError(err))
+		}
+	}
+
 	log.Info("runtime.Start: starting process")
 	err = execCmd.Start()
 	if err != nil {
@@ -174,6 +182,14 @@ func Start(ctx context.Context, id string) error {
 		telemetry.FieldString("status", state.Status))
 
 	saveState(filepath.Join("/run/thrive/containers", id), state)
+
+	if len(cfg.Secrets) > 0 {
+		log.Info("runtime.Start: cleaning up secrets", telemetry.FieldString("containerID", id))
+		if err := secrets.Cleanup(id); err != nil {
+			log.Warn("runtime.Start: secrets.Cleanup failed", telemetry.FieldString("containerID", id), telemetry.FieldError(err))
+		}
+	}
+
 	log.Info("runtime.Start: completed", telemetry.FieldString("containerID", id), telemetry.FieldString("finalStatus", state.Status))
 
 	return nil

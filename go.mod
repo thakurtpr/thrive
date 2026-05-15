@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/google/go-containerregistry v0.21.5
+	github.com/google/uuid v1.6.0
 	github.com/spf13/cobra v1.10.2
 	go.uber.org/zap v1.28.0
 	golang.org/x/sync v0.20.0
