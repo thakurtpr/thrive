@@ -46,9 +46,9 @@ alternative that solves Docker's core limitations.
 github.com/thakurprasadrout/thrive
 
 ## Build phases
-- Phase 1: Core runtime (namespaces + cgroups + pivot_root) — FOUNDATION
-- Phase 2: Image management (pull, layers, OverlayFS) — STORAGE
-- Phase 3: CLI (thrive run, ps, kill, logs) — USABILITY
+- Phase 1: Core runtime (namespaces + cgroups + supervisor) ✓
+- Phase 2: Image management (pull, layers, ChunkStore) ✓
+- Phase 3: CLI (thrive run, ps, kill, logs, rm, images, rmi) ✓
 - Phase 4: Thrivefile + DAG build engine — BUILD SYSTEM
 - Phase 5: Secrets manager (tmpfs vault) — SECURITY
 - Phase 6: Lazy pulling via FUSE — PERFORMANCE
@@ -56,7 +56,7 @@ github.com/thakurprasadrout/thrive
 - Phase 8: P2P registry + chunk store — DISTRIBUTION
 
 ## Current phase
-[x] Phase 1 — Core runtime (namespace isolation, cgroups, supervisor) ✓
+[x] Phase 3 — CLI wiring complete
 
 ## Important file locations
 - Container state: /run/thrive/containers/{id}/

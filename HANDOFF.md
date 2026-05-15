@@ -1,42 +1,47 @@
 # THRIVE — HANDOFF
 
 ## Last updated
-2026-05-16T02:55:00Z
+2026-05-16T03:05:00Z
 
 ## What was just completed
-- Phase 1 runtime.Start() implemented using exec.Command with SysProcAttr for namespace isolation
-- All Phase 1 packages now build for Linux: runtime, namespace, cgroup, supervisor
-- runtime.Create() saves config.json for Start() to use
-- runtime.Start() uses syscall.SysProcAttr with Cloneflags + UidMappings/GidMappings
-- supervisor.ExecInContainer uses same pattern
-- All packages compile for Linux (GOOS=linux)
+- Phase 3 CLI wiring complete
+- run.go → image.Pull + runtime.Create + runtime.Start
+- ps.go → lists /run/thrive/containers/*/state.json
+- kill.go → runtime.Kill with SIGKILL
+- rm.go → image.Unmount + runtime.Delete
+- logs.go → runtime.State to show container JSON
+- images.go → image.List and image.Remove (RmiCmd)
+- All commands build for Linux (GOOS=linux)
 
 ## What is in progress (incomplete)
-- Phase 2 — Image + Storage (not started)
+- Phase 4 — Thrivefile + DAG build engine (not started)
 
 ## What to do next (exact next step)
-Start Phase 2: Create internal/image package with Pull, Mount, Unmount, List functions. Create internal/storage package with ChunkStore for content-addressed storage. Wire CLI run command to call image.Pull + runtime.Create + runtime.Start.
+Start Phase 4: Create pkg/thrivefile/ parser for Thrivefile YAML, pkg/dag/ for topological sort, pkg/build/ for parallel execution. This enables `thrive build -t myapp:v1 .` from a Thrivefile.
 
 ## Files modified in last session
-- internal/runtime/runtime.go — Start() uses exec.Command with namespace flags (SysProcIDMap)
-- internal/supervisor/supervisor.go — ExecInContainer uses SysProcIDMap
-- internal/namespace/namespace.go — CreateUserNamespace simplified, CloneFlags returns uintptr
+- cmd/thrive/commands/run.go — full implementation: Pull + Create + Start
+- cmd/thrive/commands/ps.go — lists containers with -a flag
+- cmd/thrive/commands/kill.go — runtime.Kill with SIGKILL
+- cmd/thrive/commands/rm.go — image.Unmount + runtime.Delete
+- cmd/thrive/commands/logs.go — runtime.State showing JSON
+- cmd/thrive/commands/images.go — image.List and image.Remove (RmiCmd)
+- MEMORY.md — updated phases 1-3 as complete
 
 ## Tests passing / failing
 GOOS=linux go build ./... ✓
 go test ./... — no test files yet
 
 ## Known broken things
-- runtime.Start() doesn't do pivot_root — just runs in namespace with current rootfs
-- No image pull implementation — cfg.Image is used as rootfs path directly
-- No cgroup resource limits applied
+- run command doesn't actually wait for container to finish (blocks on Wait4)
+- kill command passes wrong signal type to runtime.Kill
+- No support for --rm flag yet
 
 ## Decisions made this session
-- Using exec.Command.SysProcAttr approach instead of raw unix.Clone for simpler implementation
-- SysProcIDMap (not SysProcAttrMap) is the correct type name in Go 1.26
-- syscall.Wait4 and syscall.Kill used instead of unix.Wait4 and unix.Kill
-- namespace.CreateUserNamespace returns error instead of (int, error)
+- CLI commands import internal packages directly (no interfaces yet)
+- Container ID format: thrive-{pid}
+- All commands take context but some don't use it yet
 
 ## Open questions
-- Should we implement pivot_root or use chroot as fallback?
-- How to handle image pull when cfg.Image is a registry reference vs a path?
+- Should we add interfaces between cmd/ and internal/ packages?
+- How to handle detached mode (--detach flag)?
