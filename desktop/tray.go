@@ -14,6 +14,12 @@ import (
 	"github.com/thakurprasadrout/thrive/internal/vm"
 )
 
+var (
+	menuInitialized bool
+	itemStart, itemRestart, itemStop *systray.MenuItem
+	statusText *systray.MenuItem
+)
+
 var currentState *vm.VMState
 
 func init() {
@@ -42,55 +48,70 @@ func onReady() {
 func onExit() {}
 
 func updateMenu() {
-	// Note: systray does not support ClearMenu - menu items are rebuilt by re-running systray
-	// For simplicity, we add items that reflect current state
-	// In production, consider using menu item checkboxes or a state machine approach
+	if !menuInitialized {
+		// First time: create all menu items
+		statusText = systray.AddMenuItem("○ Thrive Stopped", "Thrive VM status")
+		systray.AddSeparator()
+		itemStart = systray.AddMenuItem("Start VM", "Start the Thrive VM")
+		itemRestart = systray.AddMenuItem("Restart VM", "Restart the Thrive VM")
+		itemStop = systray.AddMenuItem("Stop VM", "Stop the Thrive VM")
+		itemStop.Hide()
+		itemRestart.Hide()
+		systray.AddSeparator()
+		systray.AddMenuItem("Status", "Show VM status")
+		systray.AddMenuItem("Quit Thrive", "Quit Thrive Desktop")
+		menuInitialized = true
 
-	statusText := "○ Thrive Stopped"
-	if currentState != nil && currentState.Running {
-		statusText = "● Thrive Running"
+		// Set up click handlers
+		go func() {
+			for {
+				select {
+				case <-itemStart.ClickedCh:
+					exec.Command("thrive", "desktop", "start").Run()
+				case <-itemRestart.ClickedCh:
+					exec.Command("thrive", "desktop", "restart").Run()
+				case <-itemStop.ClickedCh:
+					exec.Command("thrive", "desktop", "stop").Run()
+				}
+			}
+		}()
+
+		itemStatus := systray.AddMenuItem("Status", "Show VM status")
+		go func() {
+			for {
+				select {
+				case <-itemStatus.ClickedCh:
+					out, err := exec.Command("thrive", "desktop", "status").Output()
+					if err == nil {
+						fmt.Print(string(out))
+					}
+				}
+			}
+		}()
+
+		itemQuit := systray.AddMenuItem("Quit Thrive", "Quit Thrive Desktop")
+		go func() {
+			for {
+				select {
+				case <-itemQuit.ClickedCh:
+					os.Exit(0)
+				}
+			}
+		}()
+
+		return
 	}
-	systray.AddMenuItem(statusText, "Thrive VM status")
 
-	systray.AddSeparator()
-
+	// Update visibility based on state
 	if currentState != nil && currentState.Running {
-		itemRestart := systray.AddMenuItem("Restart VM", "Restart the Thrive VM")
-		go func() {
-			<-itemRestart.ClickedCh
-			exec.Command("thrive", "desktop", "restart").Run()
-			updateMenu()
-		}()
-
-		itemStop := systray.AddMenuItem("Stop VM", "Stop the Thrive VM")
-		go func() {
-			<-itemStop.ClickedCh
-			exec.Command("thrive", "desktop", "stop").Run()
-			updateMenu()
-		}()
+		statusText.SetTitle("● Thrive Running")
+		itemStart.Hide()
+		itemStop.Show()
+		itemRestart.Show()
 	} else {
-		itemStart := systray.AddMenuItem("Start VM", "Start the Thrive VM")
-		go func() {
-			<-itemStart.ClickedCh
-			exec.Command("thrive", "desktop", "start").Run()
-			updateMenu()
-		}()
+		statusText.SetTitle("○ Thrive Stopped")
+		itemStart.Show()
+		itemStop.Hide()
+		itemRestart.Hide()
 	}
-
-	systray.AddSeparator()
-
-	itemStatus := systray.AddMenuItem("Status", "Show VM status")
-	go func() {
-		<-itemStatus.ClickedCh
-		out, err := exec.Command("thrive", "desktop", "status").Output()
-		if err == nil {
-			fmt.Print(string(out))
-		}
-	}()
-
-	itemQuit := systray.AddMenuItem("Quit Thrive", "Quit Thrive Desktop")
-	go func() {
-		<-itemQuit.ClickedCh
-		os.Exit(0)
-	}()
 }
