@@ -9,6 +9,12 @@ import (
 	"github.com/thakurprasadrout/thrive/internal/vm"
 )
 
+// VM defaults
+const (
+	DefaultMemoryMB = 2048
+	DefaultCPUCount = 2
+)
+
 func DesktopCmd() *cobra.Command {
 	desktop := &cobra.Command{
 		Use:   "desktop",
@@ -60,8 +66,8 @@ func runDesktopInit(cmd *cobra.Command, args []string) error {
 	}
 
 	cfg := &vm.Config{
-		MemoryMB: 2048,
-		CPUCount: 2,
+		MemoryMB: DefaultMemoryMB,
+		CPUCount: DefaultCPUCount,
 		VMType:   vmType,
 	}
 	if err := vm.WriteConfig(cfg); err != nil {
@@ -99,9 +105,22 @@ func runDesktopStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("VM failed to boot: %w", err)
 	}
 
-	state, _ := vm.ReadVMState()
-	state.Running = true
-	vm.WriteVMState(state)
+	state, err := vm.ReadVMState()
+	if err != nil {
+		return fmt.Errorf("failed to read VM state: %w", err)
+	}
+	newState := &vm.VMState{
+		Version:     state.Version,
+		Running:     true,
+		PID:         state.PID,
+		CID:         state.CID,
+		VMType:      state.VMType,
+		WSLInstance: state.WSLInstance,
+		LastStart:   state.LastStart,
+	}
+	if err := vm.WriteVMState(newState); err != nil {
+		return fmt.Errorf("failed to write VM state: %w", err)
+	}
 
 	fmt.Println("Thrive Desktop VM started.")
 	return nil
@@ -112,9 +131,22 @@ func runDesktopStop(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to stop VM: %w", err)
 	}
 
-	state, _ := vm.ReadVMState()
-	state.Running = false
-	vm.WriteVMState(state)
+	state, err := vm.ReadVMState()
+	if err != nil {
+		return fmt.Errorf("failed to read VM state: %w", err)
+	}
+	newState := &vm.VMState{
+		Version:     state.Version,
+		Running:     false,
+		PID:         state.PID,
+		CID:         state.CID,
+		VMType:      state.VMType,
+		WSLInstance: state.WSLInstance,
+		LastStart:   state.LastStart,
+	}
+	if err := vm.WriteVMState(newState); err != nil {
+		return fmt.Errorf("failed to write VM state: %w", err)
+	}
 
 	fmt.Println("Thrive Desktop VM stopped.")
 	return nil
@@ -138,9 +170,22 @@ func runDesktopRestart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("VM failed to boot: %w", err)
 	}
 
-	state, _ := vm.ReadVMState()
-	state.Running = true
-	vm.WriteVMState(state)
+	state, err := vm.ReadVMState()
+	if err != nil {
+		return fmt.Errorf("failed to read VM state: %w", err)
+	}
+	newState := &vm.VMState{
+		Version:     state.Version,
+		Running:     true,
+		PID:         state.PID,
+		CID:         state.CID,
+		VMType:      state.VMType,
+		WSLInstance: state.WSLInstance,
+		LastStart:   state.LastStart,
+	}
+	if err := vm.WriteVMState(newState); err != nil {
+		return fmt.Errorf("failed to write VM state: %w", err)
+	}
 
 	fmt.Println("Thrive Desktop VM restarted.")
 	return nil
