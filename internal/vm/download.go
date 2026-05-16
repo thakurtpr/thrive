@@ -45,7 +45,8 @@ func DownloadVMImage(ctx context.Context) error {
 		return err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	client := &http.Client{Timeout: 30 * time.Minute}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to download VM image: %w", err)
 	}

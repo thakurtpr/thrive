@@ -40,7 +40,10 @@ func ThriveDir() string {
 	if runtime.GOOS == "windows" {
 		return filepath.Join(os.Getenv("LOCALAPPDATA"), "Thrive")
 	}
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = os.Getenv("HOME")
+	}
 	return filepath.Join(home, ".thrive")
 }
 

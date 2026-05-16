@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+const (
+	bootTimeoutSeconds = 30
+	bootPollInterval   = 1 * time.Second
+)
+
 // Start launches the VM and waits for it to be ready
 func Start(ctx context.Context, cfg *Config) error {
 	switch cfg.VMType {
@@ -54,7 +59,7 @@ func WaitForBoot(ctx context.Context, cfg *Config) error {
 	}
 	defer bridge.Close()
 
-	for i := 0; i < 30; i++ {
+	for i := 0; i < bootTimeoutSeconds; i++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -66,10 +71,10 @@ func WaitForBoot(ctx context.Context, cfg *Config) error {
 			return nil
 		}
 
-		time.Sleep(1 * time.Second)
+		time.Sleep(bootPollInterval)
 	}
 
-	return fmt.Errorf("vm: boot timeout after 30 seconds")
+	return fmt.Errorf("vm: boot timeout after %d seconds", bootTimeoutSeconds)
 }
 
 // HealthCheck pings the VM daemon and returns nil if it's responsive
