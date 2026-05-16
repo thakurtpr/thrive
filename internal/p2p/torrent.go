@@ -4,8 +4,10 @@
 package p2p
 
 import (
+	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/thakurprasadrout/thrive/internal/telemetry"
 )
@@ -113,7 +115,7 @@ func (te *TorrentEngine) RequestChunk(digest string, peerID NodeID) ([]byte, err
 	te.muPending.Lock()
 	if _, exists := te.pendingReqs[key]; exists {
 		te.muPending.Unlock()
-		return nil, nil
+		return nil, fmt.Errorf("RequestChunk: request already in-flight for %s", digest[:12])
 	}
 	ch := make(chan []byte, 1)
 	te.pendingReqs[key] = ch
@@ -130,20 +132,21 @@ func (te *TorrentEngine) RequestChunk(digest string, peerID NodeID) ([]byte, err
 	te.mu.RUnlock()
 
 	if !ok {
-		return nil, nil
+		return nil, fmt.Errorf("RequestChunk: peer %s not connected", peerID.String())
 	}
 
 	var d [32]byte
-	copy(d[:], digest[:32])
+	copy(d[:], digest)
 	if err := peer.SendChunkRequest(d); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("RequestChunk: SendChunkRequest: %w", err)
 	}
 
+	// Block until peer responds or 30s timeout.
 	select {
 	case data := <-ch:
 		return data, nil
-	default:
-		return nil, nil
+	case <-time.After(30 * time.Second):
+		return nil, fmt.Errorf("RequestChunk: timeout waiting for chunk %s", digest[:12])
 	}
 }
 

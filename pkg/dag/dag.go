@@ -16,6 +16,8 @@ type Graph struct {
 }
 
 // New creates a new Graph from step names and edges.
+// Any node referenced as a dependency but absent from nodes is auto-registered
+// so TopologicalSort reports "cycle/unreachable" instead of looping forever.
 func New(nodes []string, edges map[string][]string) *Graph {
 	g := &Graph{
 		nodes:    make(map[string]bool),
@@ -29,6 +31,10 @@ func New(nodes []string, edges map[string][]string) *Graph {
 	for from, toList := range edges {
 		g.edges[from] = toList
 		for _, to := range toList {
+			if !g.nodes[to] {
+				g.nodes[to] = true
+				g.inDegree[to] = 0
+			}
 			g.inDegree[to]++
 		}
 	}

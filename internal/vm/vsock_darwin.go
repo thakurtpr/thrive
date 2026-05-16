@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"path/filepath"
 	"time"
 )
 
@@ -15,13 +16,22 @@ type vsockBridge struct {
 	conn net.Conn
 }
 
-const vsockPort uint32 = 62373
-
+// newVSOCKBridge connects to vfkit's virtio-vsock Unix socket proxy.
+// vfkit creates vsock.sock after the VM starts; we retry for up to 5 seconds.
 func newVSOCKBridge() (Bridge, error) {
-	// VSOCK CID 3 is the well-known address for the first VM in Hypervisor.framework
-	// Connection goes through Hypervisor.framework's vsock device
-	// Full implementation uses github.com/mist64/hv bindings
-	return nil, fmt.Errorf("vsock bridge requires mist64/hv integration — see docs")
+	sockPath := filepath.Join(ThriveDir(), "vm", "vsock.sock")
+	var (
+		conn net.Conn
+		err  error
+	)
+	for i := 0; i < 10; i++ {
+		conn, err = net.DialTimeout("unix", sockPath, time.Second)
+		if err == nil {
+			return &vsockBridge{conn: conn}, nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return nil, fmt.Errorf("vsock bridge: %s not ready: %w", sockPath, err)
 }
 
 func (b *vsockBridge) Exec(ctx context.Context, cmd string, args []string, opts map[string]any) ([]byte, error) {

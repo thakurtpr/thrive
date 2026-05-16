@@ -1,3 +1,5 @@
+//go:build linux
+
 package commands
 
 import (
@@ -7,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/thakurprasadrout/thrive/internal/image"
 	"github.com/thakurprasadrout/thrive/pkg/build"
 )
 
@@ -50,23 +53,54 @@ func BuildCmd() *cobra.Command {
 }
 
 func PushCmd() *cobra.Command {
-	return &cobra.Command{
+	var username, password string
+
+	cmd := &cobra.Command{
 		Use:   "push [image]",
 		Short: "Push image to registry",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("push command - stub")
+			ctx := context.Background()
+			ref := args[0]
+			fmt.Printf("Pushing %s ...\n", ref)
+			if err := image.Push(ctx, ref, image.PushOptions{
+				Username: username,
+				Password: password,
+			}); err != nil {
+				fmt.Fprintf(os.Stderr, "Error pushing image: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Pushed: %s\n", ref)
 		},
 	}
+	cmd.Flags().StringVar(&username, "username", "", "Registry username")
+	cmd.Flags().StringVar(&password, "password", "", "Registry password")
+	return cmd
 }
 
 func PullCmd() *cobra.Command {
-	return &cobra.Command{
+	var username, password string
+
+	cmd := &cobra.Command{
 		Use:   "pull [image]",
 		Short: "Pull image from registry",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("pull command - stub")
+			ctx := context.Background()
+			ref := args[0]
+			fmt.Printf("Pulling %s ...\n", ref)
+			img, err := image.Pull(ctx, ref, image.PullOptions{
+				Username: username,
+				Password: password,
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error pulling image: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Pulled: %s@%s\n", img.Ref, img.Digest[:12])
 		},
 	}
+	cmd.Flags().StringVar(&username, "username", "", "Registry username")
+	cmd.Flags().StringVar(&password, "password", "", "Registry password")
+	return cmd
 }

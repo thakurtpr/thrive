@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/thakurprasadrout/thrive/internal/cgroup"
+	"github.com/thakurprasadrout/thrive/internal/image"
 	"github.com/thakurprasadrout/thrive/internal/secrets"
 	"github.com/thakurprasadrout/thrive/internal/telemetry"
 )
@@ -115,6 +117,17 @@ func Start(ctx context.Context, id string) error {
 	}
 	telemetry.Debug("runtime.Start: config unmarshaled", telemetry.FieldString("image", cfg.Image))
 
+	// Mount image rootfs via OverlayFS (fuse-overlayfs fallback for rootless).
+	log.Info("runtime.Start: mounting rootfs", telemetry.FieldString("image", cfg.Image))
+	rootfsPath, mountErr := image.Mount(ctx, cfg.Image, id)
+	if mountErr != nil {
+		log.Warn("runtime.Start: rootfs mount failed, running without chroot",
+			telemetry.FieldString("containerID", id), telemetry.FieldError(mountErr))
+		rootfsPath = ""
+	} else {
+		log.Info("runtime.Start: rootfs mounted", telemetry.FieldString("rootfs", rootfsPath))
+	}
+
 	// Build command
 	cmd := cfg.Command
 	if len(cmd) == 0 {
@@ -128,16 +141,36 @@ func Start(ctx context.Context, id string) error {
 	execCmd.Args = cmd
 	execCmd.Env = cfg.Env
 	execCmd.Stdin = os.Stdin
-	execCmd.Stdout = os.Stdout
-	execCmd.Stderr = os.Stderr
 
-	// Set up namespace flags
+	// Redirect container stdout/stderr to a log file so `thrive logs` can stream it.
+	containerDir := filepath.Join("/run/thrive/containers", id)
+	logPath := filepath.Join(containerDir, "logs")
+	logFile, logErr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if logErr != nil {
+		log.Warn("runtime.Start: cannot open log file, falling back to stdout", telemetry.FieldError(logErr))
+		execCmd.Stdout = os.Stdout
+		execCmd.Stderr = os.Stderr
+	} else {
+		execCmd.Stdout = logFile
+		execCmd.Stderr = logFile
+	}
+
+	// Full isolation: PID, mount, UTS, IPC, network, and user namespaces.
+	// CLONE_NEWUSER enables rootless operation combined with UID/GID mappings.
 	log.Info("runtime.Start: setting up namespace flags",
 		telemetry.FieldInt("uid", os.Getuid()),
 		telemetry.FieldInt("gid", os.Getgid()))
 
-	execCmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags: syscall.CLONE_NEWPID | syscall.CLONE_NEWNS | syscall.CLONE_NEWUTS | syscall.CLONE_NEWIPC,
+	cloneFlags := uintptr(
+		syscall.CLONE_NEWPID |
+			syscall.CLONE_NEWNS |
+			syscall.CLONE_NEWUTS |
+			syscall.CLONE_NEWIPC |
+			syscall.CLONE_NEWNET |
+			syscall.CLONE_NEWUSER,
+	)
+	sysProcAttr := &syscall.SysProcAttr{
+		Cloneflags: cloneFlags,
 		UidMappings: []syscall.SysProcIDMap{
 			{ContainerID: 0, HostID: os.Getuid(), Size: 1},
 		},
@@ -145,7 +178,13 @@ func Start(ctx context.Context, id string) error {
 			{ContainerID: 0, HostID: os.Getgid(), Size: 1},
 		},
 	}
-	telemetry.Debug("runtime.Start: SysProcAttr configured", telemetry.FieldInt("cloneflags", syscall.CLONE_NEWPID|syscall.CLONE_NEWNS|syscall.CLONE_NEWUTS|syscall.CLONE_NEWIPC))
+	// Chroot into the OverlayFS merged dir so the container sees its own rootfs.
+	if rootfsPath != "" {
+		sysProcAttr.Chroot = rootfsPath
+		execCmd.Dir = "/"
+	}
+	execCmd.SysProcAttr = sysProcAttr
+	telemetry.Debug("runtime.Start: SysProcAttr configured", telemetry.FieldInt("cloneflags", int(cloneFlags)))
 
 	if len(cfg.Secrets) > 0 {
 		log.Info("runtime.Start: injecting secrets", telemetry.FieldString("containerID", id), telemetry.FieldInt("count", len(cfg.Secrets)))
@@ -156,6 +195,10 @@ func Start(ctx context.Context, id string) error {
 
 	log.Info("runtime.Start: starting process")
 	err = execCmd.Start()
+	if logFile != nil && logErr == nil {
+		// Log file is now owned by the child; close our copy in the parent.
+		logFile.Close()
+	}
 	if err != nil {
 		log.Error("runtime.Start: exec.Start failed", telemetry.FieldError(err))
 		return fmt.Errorf("runtime.Start: exec: %w", err)
@@ -164,34 +207,58 @@ func Start(ctx context.Context, id string) error {
 	pid := execCmd.Process.Pid
 	log.Info("runtime.Start: process started", telemetry.FieldInt("pid", pid))
 
-	log.Info("runtime.Start: waiting for process")
-	var status syscall.WaitStatus
-	syscall.Wait4(pid, &status, 0, nil)
-	telemetry.Debug("runtime.Start: process exited", telemetry.FieldInt("exitStatus", status.ExitStatus()))
-
-	// Update state
-	state.PID = pid
-	state.Status = "running"
-	if status.Exited() {
-		state.Status = "stopped"
-		state.ExitCode = status.ExitStatus()
-		log.Info("runtime.Start: process exited with code", telemetry.FieldInt("exitCode", state.ExitCode))
-	}
-	telemetry.Debug("runtime.Start: updating state",
-		telemetry.FieldInt("pid", pid),
-		telemetry.FieldString("status", state.Status))
-
-	saveState(filepath.Join("/run/thrive/containers", id), state)
-
-	if len(cfg.Secrets) > 0 {
-		log.Info("runtime.Start: cleaning up secrets", telemetry.FieldString("containerID", id))
-		if err := secrets.Cleanup(id); err != nil {
-			log.Warn("runtime.Start: secrets.Cleanup failed", telemetry.FieldString("containerID", id), telemetry.FieldError(err))
+	// Wire cgroup v2 resource limits.
+	if cgMgr, cgErr := cgroup.New(id); cgErr != nil {
+		log.Warn("runtime.Start: cgroup.New failed", telemetry.FieldString("containerID", id), telemetry.FieldError(cgErr))
+	} else {
+		if applyErr := cgMgr.Apply(pid); applyErr != nil {
+			log.Warn("runtime.Start: cgroup.Apply failed", telemetry.FieldInt("pid", pid), telemetry.FieldError(applyErr))
+		}
+		if cfg.Resources.MemoryLimit > 0 {
+			if err := cgMgr.SetMemoryLimit(cfg.Resources.MemoryLimit); err != nil {
+				log.Warn("runtime.Start: SetMemoryLimit failed", telemetry.FieldError(err))
+			}
+		}
+		if cfg.Resources.CPUQuota > 0 {
+			if err := cgMgr.SetCPUQuota(cfg.Resources.CPUQuota); err != nil {
+				log.Warn("runtime.Start: SetCPUQuota failed", telemetry.FieldError(err))
+			}
 		}
 	}
 
-	log.Info("runtime.Start: completed", telemetry.FieldString("containerID", id), telemetry.FieldString("finalStatus", state.Status))
+	// Save running state immediately so ps/kill work without waiting for exit.
+	state.PID = pid
+	state.Status = "running"
+	if err := saveState(containerDir, state); err != nil {
+		log.Error("runtime.Start: saveState (running) failed", telemetry.FieldString("containerID", id), telemetry.FieldError(err))
+	}
 
+	// Wait for process exit in the background; update state and clean up secrets when done.
+	go func() {
+		if err := execCmd.Wait(); err != nil {
+			log.Warn("runtime.Start: process wait error", telemetry.FieldString("containerID", id), telemetry.FieldError(err))
+		}
+		exitCode := 0
+		if execCmd.ProcessState != nil {
+			exitCode = execCmd.ProcessState.ExitCode()
+		}
+		telemetry.Debug("runtime.Start: process exited", telemetry.FieldInt("pid", pid), telemetry.FieldInt("exitCode", exitCode))
+
+		state.Status = "stopped"
+		state.ExitCode = exitCode
+		if saveErr := saveState(containerDir, state); saveErr != nil {
+			log.Error("runtime.Start: saveState (stopped) failed", telemetry.FieldString("containerID", id), telemetry.FieldError(saveErr))
+		}
+
+		if len(cfg.Secrets) > 0 {
+			if cleanErr := secrets.Cleanup(id); cleanErr != nil {
+				log.Warn("runtime.Start: secrets.Cleanup failed", telemetry.FieldString("containerID", id), telemetry.FieldError(cleanErr))
+			}
+		}
+		log.Info("runtime.Start: container exited", telemetry.FieldString("containerID", id), telemetry.FieldInt("exitCode", exitCode))
+	}()
+
+	log.Info("runtime.Start: container running", telemetry.FieldString("containerID", id), telemetry.FieldInt("pid", pid))
 	return nil
 }
 

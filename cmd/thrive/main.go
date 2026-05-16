@@ -28,6 +28,7 @@ func main() {
 		commands.SecretCmd(),
 		commands.MetricsCmd(),
 		commands.SystemCmd(),
+		commands.DesktopCmd(),
 	)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)

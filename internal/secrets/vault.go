@@ -9,7 +9,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/thakurprasadrout/thrive/internal/telemetry"
@@ -23,14 +25,35 @@ var (
 
 const keyLen = 32 // AES-256
 
+const masterKeyPath = "/var/lib/thrive/secrets/.master"
+
 func getMasterKey() ([]byte, error) {
 	keyOnce.Do(func() {
+		// 1. Prefer explicit env var (CI / operator-provided).
 		hexKey := os.Getenv("THRIVE_MASTER_KEY")
+
+		// 2. Fall back to persisted key on disk.
 		if hexKey == "" {
-			keyErr = fmt.Errorf("THRIVE_MASTER_KEY env var not set")
-			telemetry.Error("vault.getMasterKey: master key missing", telemetry.FieldError(keyErr))
-			return
+			if data, err := os.ReadFile(masterKeyPath); err == nil {
+				hexKey = strings.TrimSpace(string(data))
+				telemetry.Debug("vault.getMasterKey: loaded persisted key")
+			}
 		}
+
+		// 3. Generate, persist, and use a fresh key on first run.
+		if hexKey == "" {
+			raw := make([]byte, keyLen)
+			if _, err := io.ReadFull(rand.Reader, raw); err != nil {
+				keyErr = fmt.Errorf("vault.getMasterKey: generate key: %w", err)
+				return
+			}
+			hexKey = hex.EncodeToString(raw)
+			if err := os.MkdirAll("/var/lib/thrive/secrets", 0700); err == nil {
+				os.WriteFile(masterKeyPath, []byte(hexKey), 0600)
+			}
+			telemetry.Debug("vault.getMasterKey: generated new master key")
+		}
+
 		masterKey, keyErr = hex.DecodeString(hexKey)
 		if keyErr != nil {
 			telemetry.Error("vault.getMasterKey: hex decode failed", telemetry.FieldError(keyErr))
@@ -38,10 +61,9 @@ func getMasterKey() ([]byte, error) {
 		}
 		if len(masterKey) != keyLen {
 			keyErr = fmt.Errorf("master key must be %d bytes, got %d", keyLen, len(masterKey))
-			telemetry.Error("vault.getMasterKey: invalid key length", telemetry.FieldInt("expected", keyLen), telemetry.FieldInt("got", len(masterKey)))
 			return
 		}
-		telemetry.Debug("vault.getMasterKey: master key loaded", telemetry.FieldInt("keyLen", len(masterKey)))
+		telemetry.Debug("vault.getMasterKey: key ready", telemetry.FieldInt("len", len(masterKey)))
 	})
 	return masterKey, keyErr
 }

@@ -21,6 +21,22 @@ const (
 )
 
 func DownloadVMImage(ctx context.Context) error {
+	destDir := filepath.Join(ThriveDir(), "vm")
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return err
+	}
+
+	// Local override: skip network download entirely. Used for air-gapped
+	// installs, dev loops, and bypassing missing GitHub release assets.
+	if localPath := os.Getenv("THRIVE_VM_IMAGE_PATH"); localPath != "" {
+		f, err := os.Open(localPath)
+		if err != nil {
+			return fmt.Errorf("THRIVE_VM_IMAGE_PATH %q: %w", localPath, err)
+		}
+		defer f.Close()
+		return extractTarGz(f, destDir)
+	}
+
 	var artifactName string
 	switch runtime.GOOS {
 	case "darwin":
@@ -36,7 +52,6 @@ func DownloadVMImage(ctx context.Context) error {
 	}
 
 	url := VMImageBaseURL + "/" + artifactName
-	destDir := filepath.Join(ThriveDir(), "vm")
 
 	log.Printf("downloading VM image from %s", url)
 
@@ -54,10 +69,6 @@ func DownloadVMImage(ctx context.Context) error {
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
-	}
-
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return err
 	}
 
 	return extractTarGz(resp.Body, destDir)
@@ -97,6 +108,9 @@ func extractTarGz(r io.Reader, dest string) error {
 			}
 			defer f.Close()
 			if _, err := io.Copy(f, tarRdr); err != nil {
+				return err
+			}
+			if err := os.Chmod(target, header.FileInfo().Mode()); err != nil {
 				return err
 			}
 		case tar.TypeSymlink:

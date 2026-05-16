@@ -14,41 +14,56 @@ const (
 	bootPollInterval   = 1 * time.Second
 )
 
-// Start launches the VM and waits for it to be ready
-func Start(ctx context.Context, cfg *Config) error {
-	switch cfg.VMType {
+// launcher is the platform-agnostic VM lifecycle contract.
+type launcher interface {
+	Start(ctx context.Context, cfg *Config) (*VMState, error)
+	Stop(ctx context.Context, state *VMState) error
+}
+
+func selectLauncher(vmType string) (launcher, error) {
+	switch vmType {
 	case "darwin-hv":
-		return startDarwinHV(ctx, cfg)
+		return newDarwinLauncher(), nil
 	case "hyperv":
-		return startHyperV(ctx, cfg)
+		return newHyperVLauncher(), nil
 	case "wsl2":
-		return startWSL2(ctx, cfg)
+		return newWSL2Launcher(), nil
 	default:
-		return fmt.Errorf("unsupported vm type: %s", cfg.VMType)
+		return nil, fmt.Errorf("unsupported vm type: %s", vmType)
 	}
 }
 
-// Stop gracefully stops the VM
+// Start launches the VM and persists the resulting state.
+func Start(ctx context.Context, cfg *Config) error {
+	l, err := selectLauncher(cfg.VMType)
+	if err != nil {
+		return err
+	}
+	state, err := l.Start(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	return WriteVMState(state)
+}
+
+// Stop gracefully stops the VM and updates persisted state.
 func Stop(ctx context.Context) error {
 	state, err := ReadVMState()
 	if err != nil {
 		return err
 	}
-
 	if !state.Running {
 		return nil
 	}
-
-	switch state.VMType {
-	case "darwin-hv":
-		return stopDarwinHV(ctx, state)
-	case "hyperv":
-		return stopHyperV(ctx, state)
-	case "wsl2":
-		return stopWSL2(ctx, state)
-	default:
-		return fmt.Errorf("unknown vm type in state")
+	l, err := selectLauncher(state.VMType)
+	if err != nil {
+		return err
 	}
+	if err := l.Stop(ctx, state); err != nil {
+		return err
+	}
+	state.Running = false
+	return WriteVMState(state)
 }
 
 // WaitForBoot blocks until the VM is reachable via the bridge

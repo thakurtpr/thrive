@@ -1,0 +1,30 @@
+# Build output
+bin/
+dist/
+
+# Go toolchain
+*.test
+*.out
+coverage.html
+coverage.txt
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Editor artifacts
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Thrive runtime state (never commit live container state)
+/run/
+/var/lib/thrive/
+/var/log/thrive/

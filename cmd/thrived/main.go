@@ -45,6 +45,8 @@ func main() {
 
 	log.Printf("thrived: listening on %s", socketPath)
 
+	go serveVsock(ctx, vsockPort())
+
 	// Accept connections and serve
 	for {
 		conn, err := listener.Accept()

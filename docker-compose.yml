@@ -1,0 +1,37 @@
+services:
+  thrive:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - GOTOOLCHAIN=auto
+    image: thrive:latest
+    container_name: thrive-dev
+    privileged: true
+    volumes:
+      - thrive-images:/var/lib/thrive/images
+      - thrive-chunks:/var/lib/thrive/chunks
+      - thrive-secrets:/var/lib/thrive/secrets
+      - thrive-containers:/run/thrive/containers
+      - /dev/fuse:/dev/fuse
+    environment:
+      - THRIVE_LOG_LEVEL=debug
+      - THRIVE_STATE_DIR=/run/thrive
+      - THRIVE_IMAGE_DIR=/var/lib/thrive/images
+      - THRIVE_CHUNK_DIR=/var/lib/thrive/chunks
+    cap_add:
+      - SYS_ADMIN
+      - NET_ADMIN
+      - SYS_MODULE
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    devices:
+      - /dev/fuse
+    network_mode: host
+
+volumes:
+  thrive-images:
+  thrive-chunks:
+  thrive-secrets:
+  thrive-containers:

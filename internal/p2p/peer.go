@@ -235,7 +235,7 @@ func NewListener(addr string, onConn func(*PeerConn)) (*Listener, error) {
 func (l *Listener) acceptLoop() {
 	log := telemetry.Logger()
 	for {
-		_, err := l.ln.Accept()
+		conn, err := l.ln.Accept()
 		if err != nil {
 			l.mu.RLock()
 			if l.closed {
@@ -247,18 +247,16 @@ func (l *Listener) acceptLoop() {
 			continue
 		}
 
-		go func() {
-			conn, err := l.ln.Accept()
-			if err != nil {
-				return
-			}
-			pc := NewPeerConn(conn, NodeID{}, func(id NodeID) {})
+		// Pass the accepted conn explicitly to avoid the goroutine closing over
+		// the loop variable and re-accepting from the listener by mistake.
+		go func(c net.Conn) {
+			pc := NewPeerConn(c, NodeID{}, func(id NodeID) {})
 			l.mu.RLock()
 			if l.onConn != nil {
 				l.onConn(pc)
 			}
 			l.mu.RUnlock()
-		}()
+		}(conn)
 	}
 }
 

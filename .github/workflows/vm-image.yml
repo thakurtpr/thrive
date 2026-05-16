@@ -1,0 +1,43 @@
+name: Build VM Image
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build-vm-image:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Install linuxkit
+        run: go install github.com/linuxkit/linuxkit/src/cmd/linuxkit@latest
+
+      - name: Build Linux daemon binaries
+        run: make build-linux
+
+      - name: Build VM image
+        run: bash scripts/build-vm-image.sh arm64
+
+      - name: Upload to GitHub releases
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ github.ref_name }} thrive-vm-darwin-arm64.tar.gz --clobber
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: thrive-vm-darwin-arm64
+          path: thrive-vm-darwin-arm64.tar.gz

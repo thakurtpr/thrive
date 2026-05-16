@@ -5,10 +5,8 @@
 package commands
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/thakurprasadrout/thrive/internal/vm"

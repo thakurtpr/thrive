@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
+	"github.com/thakurprasadrout/thrive/internal/runtime"
 	"github.com/thakurprasadrout/thrive/pkg/dag"
 	"github.com/thakurprasadrout/thrive/pkg/thrivefile"
 	"golang.org/x/sync/errgroup"
@@ -48,34 +50,69 @@ func Execute(ctx context.Context, graph *thrivefile.BuildGraph, opts BuildOption
 		return nil, fmt.Errorf("build.Execute: TopologicalSort: %w", err)
 	}
 
-	// Execute each level in parallel
+	// Execute each level in parallel; levels are already topologically ordered.
 	stepOutputs := make(map[string]string)
 	for levelIdx, level := range levels {
-		fmt.Printf("Executing level %d with %d steps: %v\n", levelIdx, len(level), level)
+		fmt.Printf("build: level %d — steps: %v\n", levelIdx, level)
 
-		eg, _ := errgroup.WithContext(ctx)
+		eg, egCtx := errgroup.WithContext(ctx)
 		for _, stepName := range level {
+			stepName := stepName // capture for goroutine
 			step := graph.Steps[stepName]
 			eg.Go(func() error {
 				cacheKey, err := CacheKey(step, graph.BaseImage, stepOutputs)
 				if err != nil {
-					return fmt.Errorf("build.Execute: CacheKey: %w", err)
+					return fmt.Errorf("build.Execute: CacheKey for %s: %w", stepName, err)
 				}
 				step.CacheKey = cacheKey
 
-				// Check cache
+				cachePath := fmt.Sprintf("/var/lib/thrive/cache/%s", cacheKey)
 				if !opts.NoCache {
-					cachePath := fmt.Sprintf("/var/lib/thrive/cache/%s", cacheKey)
 					if _, err := os.Stat(cachePath); err == nil {
-						fmt.Printf("Step %s: cache hit (%s)\n", stepName, cacheKey[:12])
+						fmt.Printf("build: step %s — cache hit (%s)\n", stepName, cacheKey[:12])
 						stepOutputs[stepName] = cachePath
 						return nil
 					}
 				}
 
-				// Execute step (simplified - runs in build container)
-				fmt.Printf("Step %s: executing...\n", stepName)
-				stepOutputs[stepName] = "/var/lib/thrive/cache/" + cacheKey
+				// Run step inside a container using the build base image.
+				fmt.Printf("build: step %s — executing: %s\n", stepName, step.Run)
+				containerID := fmt.Sprintf("thrive-build-%s-%s", stepName, cacheKey[:8])
+				cfg := runtime.ContainerConfig{
+					ID:      containerID,
+					Image:   graph.BaseImage,
+					Command: []string{"/bin/sh", "-c", step.Run},
+				}
+
+				if _, err := runtime.Create(egCtx, cfg); err != nil {
+					return fmt.Errorf("build.Execute: Create %s: %w", stepName, err)
+				}
+				if err := runtime.Start(egCtx, containerID); err != nil {
+					runtime.Delete(egCtx, containerID)
+					return fmt.Errorf("build.Execute: Start %s: %w", stepName, err)
+				}
+
+				// Poll until the step container stops.
+				for {
+					state, err := runtime.State(egCtx, containerID)
+					if err != nil {
+						break
+					}
+					if state.Status == "stopped" {
+						runtime.Delete(egCtx, containerID)
+						if state.ExitCode != 0 {
+							return fmt.Errorf("build.Execute: step %s failed (exit %d)", stepName, state.ExitCode)
+						}
+						break
+					}
+					time.Sleep(100 * time.Millisecond)
+				}
+
+				// Mark cache hit for downstream steps.
+				os.MkdirAll("/var/lib/thrive/cache", 0755)
+				os.WriteFile(cachePath, []byte("done"), 0644)
+				stepOutputs[stepName] = cachePath
+				fmt.Printf("build: step %s — done\n", stepName)
 				return nil
 			})
 		}

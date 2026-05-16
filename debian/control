@@ -1,0 +1,14 @@
+Source: thrive
+Section: utils
+Priority: optional
+Maintainer: Thakur Prasad Rout <thakurprasadrout@gmail.com>
+Build-Depends: debhelper-compat (= 13), golang-go (>= 1.25.0)
+Standards-Version: 4.6.0
+
+Package: thrive
+Architecture: linux-arm64 linux-amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}, fuse, libseccomp2
+Description: THakur Runtime Isolation Virtualization Engine
+ A daemonless, rootless, OCI-compliant container runtime in Go.
+ Built as a ground-up reimplementation of core Docker/containerd
+ concepts — without the daemon.

@@ -1,0 +1,10 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	GOTOOLCHAIN=auto GOOS=linux CGO_ENABLED=1 go build -o debian/thrive ./cmd/thrive
+
+override_dh_auto_install:
+	dh_install -pthrive debian/thrive usr/bin/

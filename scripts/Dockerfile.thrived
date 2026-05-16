@@ -1,0 +1,3 @@
+FROM scratch
+COPY bin/thrived-linux-arm64 /usr/local/bin/thrived
+ENTRYPOINT ["/usr/local/bin/thrived"]

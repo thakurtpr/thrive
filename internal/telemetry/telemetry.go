@@ -6,38 +6,43 @@ package telemetry
 import (
 	"context"
 	"os"
+	"sync"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
-var logger *zap.Logger
+var (
+	logger   *zap.Logger
+	initOnce sync.Once
+)
 
+// Init configures the global logger. Should be called once at startup before
+// any goroutines that call Logger(). Subsequent calls are no-ops.
 func Init() error {
-	config := zap.NewProductionConfig()
-	config.OutputPaths = []string{"stdout"}
-	config.EncoderConfig.TimeKey = "timestamp"
-	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	config.EncoderConfig.StacktraceKey = ""
+	var buildErr error
+	initOnce.Do(func() {
+		config := zap.NewProductionConfig()
+		config.OutputPaths = []string{"stdout"}
+		config.EncoderConfig.TimeKey = "timestamp"
+		config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+		config.EncoderConfig.StacktraceKey = ""
 
-	// Debug level for development
-	if os.Getenv("THRIVE_LOG_LEVEL") == "debug" {
-		config.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
-	}
+		if os.Getenv("THRIVE_LOG_LEVEL") == "debug" {
+			config.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
+		}
 
-	var err error
-	logger, err = config.Build()
-	if err != nil {
-		return err
-	}
-
-	return nil
+		logger, buildErr = config.Build()
+	})
+	return buildErr
 }
 
+// Logger returns the global logger. If Init has not been called, a default
+// production logger is initialised exactly once. Safe for concurrent use.
 func Logger() *zap.Logger {
-	if logger == nil {
+	initOnce.Do(func() {
 		logger, _ = zap.NewProduction()
-	}
+	})
 	return logger
 }
 

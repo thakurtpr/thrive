@@ -5,6 +5,10 @@ package lazypull
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/thakurprasadrout/thrive/internal/image"
@@ -71,7 +75,51 @@ func (cf *ChunkFetcher) fetchChunk(digest string) error {
 		return nil
 	}
 
-	log.Debug("ChunkFetcher.fetchChunk: chunk not in store, would fetch from registry", telemetry.FieldString("digest", digest[:12]))
+	// Derive registry and repository from imageRef.
+	// imageRef examples: "alpine", "library/alpine", "registry.example.com/myapp:v1"
+	ref := cf.imageRef
+	// Strip any tag.
+	if idx := strings.LastIndex(ref, ":"); idx > strings.LastIndex(ref, "/") {
+		ref = ref[:idx]
+	}
+
+	registry := "registry-1.docker.io"
+	repo := ref
+	if parts := strings.SplitN(ref, "/", 2); len(parts) == 2 && strings.Contains(parts[0], ".") {
+		registry = parts[0]
+		repo = parts[1]
+	} else if !strings.Contains(ref, "/") {
+		repo = "library/" + ref
+	}
+
+	blobURL := fmt.Sprintf("https://%s/v2/%s/blobs/%s", registry, repo, digest)
+	log.Info("ChunkFetcher.fetchChunk: fetching", telemetry.FieldString("digest", digest[:12]), telemetry.FieldString("url", blobURL))
+
+	req, err := http.NewRequestWithContext(cf.ctx, http.MethodGet, blobURL, nil)
+	if err != nil {
+		return fmt.Errorf("ChunkFetcher.fetchChunk: build request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("ChunkFetcher.fetchChunk: GET: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		return fmt.Errorf("ChunkFetcher.fetchChunk: status %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("ChunkFetcher.fetchChunk: read body: %w", err)
+	}
+
+	if err := cf.chunkStore.Put(context.Background(), digest, data); err != nil {
+		return fmt.Errorf("ChunkFetcher.fetchChunk: store: %w", err)
+	}
+
+	log.Info("ChunkFetcher.fetchChunk: stored", telemetry.FieldString("digest", digest[:12]), telemetry.FieldInt("bytes", len(data)))
 	return nil
 }
 

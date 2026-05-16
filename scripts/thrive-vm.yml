@@ -1,0 +1,35 @@
+# LinuxKit VM image for Thrive Desktop — matches Docker Desktop's approach
+kernel:
+  image: linuxkit/kernel:6.6.13
+  cmdline: "console=hvc0 root=/dev/vda rw quiet"
+
+init:
+  - linuxkit/init:v1.2.0
+  - linuxkit/runc:v1.2.0
+  - linuxkit/containerd:v1.2.0
+
+onboot:
+  - name: sysctl
+    image: linuxkit/sysctl:v1.2.0
+  - name: vsock-modules
+    image: linuxkit/modload:v1.2.0
+    command: ["modprobe", "virtio_vsock"]
+
+services:
+  - name: thrived
+    image: thrive-daemon:local
+    capabilities:
+      - CAP_SYS_ADMIN
+      - CAP_NET_ADMIN
+    mounts:
+      - type: bind
+        source: /var/run
+        destination: /var/run
+        options: ["rw", "rbind", "rshared"]
+    env:
+      - THRIVE_VSOCK_PORT=1024
+
+  - name: getty
+    image: linuxkit/getty:v1.2.0
+    env:
+      - INSECURE=true

@@ -4,11 +4,15 @@
 package otel
 
 import (
+	"context"
 	"net/http"
 	"os"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"github.com/thakurprasadrout/thrive/internal/telemetry"
 )
 
@@ -36,6 +40,26 @@ func Init(cfg Config) error {
 	}
 
 	initMetricsInstruments()
+
+	// Wire OTLP gRPC trace exporter when an endpoint is configured.
+	endpoint := cfg.OTLPEndpoint
+	if endpoint == "" {
+		endpoint = os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	}
+	if endpoint != "" {
+		exp, err := otlptracegrpc.New(
+			context.Background(),
+			otlptracegrpc.WithEndpoint(endpoint),
+			otlptracegrpc.WithInsecure(),
+		)
+		if err != nil {
+			log.Error("otel.Init: OTLP exporter failed", telemetry.FieldError(err))
+		} else {
+			tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exp))
+			otel.SetTracerProvider(tp)
+			log.Info("otel.Init: OTLP trace exporter wired", telemetry.FieldString("endpoint", endpoint))
+		}
+	}
 
 	log.Info("otel.Init: completed")
 	return nil
