@@ -1,3 +1,5 @@
+//go:build linux || darwin || windows
+
 package main
 
 import (
@@ -5,7 +7,6 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-
 	"github.com/thakurprasadrout/thrive/cmd/thrive/commands"
 )
 
