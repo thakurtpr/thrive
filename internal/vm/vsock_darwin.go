@@ -13,7 +13,6 @@ import (
 
 type vsockBridge struct {
 	conn net.Conn
-	cid  uint32
 }
 
 const vsockPort uint32 = 62373
@@ -41,14 +40,13 @@ func (b *vsockBridge) Exec(ctx context.Context, cmd string, args []string, opts 
 		return nil, err
 	}
 
-	respData := make([]byte, 4096)
-	n, err := b.conn.Read(respData)
+	respData, err := io.ReadAll(b.conn)
 	if err != nil {
 		return nil, err
 	}
 
 	var resp map[string]any
-	if err := json.Unmarshal(respData[:n], &resp); err != nil {
+	if err := json.Unmarshal(respData, &resp); err != nil {
 		return nil, err
 	}
 
@@ -73,6 +71,12 @@ func (b *vsockBridge) ExecStream(ctx context.Context, cmd string, args []string,
 
 	decoder := json.NewDecoder(b.conn)
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
 		var resp map[string]any
 		if err := decoder.Decode(&resp); err != nil {
 			return err
