@@ -5,7 +5,7 @@ set -euo pipefail
 export PATH="$(go env GOPATH)/bin:$PATH"
 
 ARCH=${1:-arm64}
-VFKIT_VERSION=0.5.1
+VFKIT_VERSION=0.6.3
 OUT=thrive-vm-darwin-${ARCH}.tar.gz
 TMP=$(mktemp -d)
 trap "rm -rf $TMP" EXIT
@@ -21,6 +21,7 @@ echo "==> Running LinuxKit build"
 linuxkit build \
   --arch ${ARCH} \
   --format kernel+initrd \
+  --docker \
   --name thrive-vm \
   scripts/thrive-vm.yml
 
@@ -30,7 +31,7 @@ mv thrive-vm-initrd.img    $TMP/initrd.img
 
 echo "==> Downloading vfkit v${VFKIT_VERSION} (self-contained bundle)"
 curl -fsSL \
-  "https://github.com/crc-org/vfkit/releases/download/v${VFKIT_VERSION}/vfkit-darwin-${ARCH}" \
+  "https://github.com/crc-org/vfkit/releases/download/v${VFKIT_VERSION}/vfkit" \
   -o $TMP/vfkit
 chmod +x $TMP/vfkit
 
