@@ -5,17 +5,21 @@
 package desktop
 
 import (
-	"fmt"
+	"context"
+	"log"
 	"os"
 	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/getlantern/systray"
 	"github.com/thakurprasadrout/thrive/internal/vm"
 )
 
+const pollInterval = 5 * time.Second
+
 var (
-	menuInitialized bool
+	menuOnce       sync.Once
 	itemStart, itemRestart, itemStop *systray.MenuItem
 	statusText *systray.MenuItem
 )
@@ -31,25 +35,7 @@ func RunTray() {
 }
 
 func onReady() {
-	updateMenu()
-
-	go func() {
-		for {
-			time.Sleep(5 * time.Second)
-			newState, err := vm.ReadVMState()
-			if err == nil && (currentState == nil || newState.Running != currentState.Running) {
-				currentState = newState
-				updateMenu()
-			}
-		}
-	}()
-}
-
-func onExit() {}
-
-func updateMenu() {
-	if !menuInitialized {
-		// First time: create all menu items
+	menuOnce.Do(func() {
 		statusText = systray.AddMenuItem("○ Thrive Stopped", "Thrive VM status")
 		systray.AddSeparator()
 		itemStart = systray.AddMenuItem("Start VM", "Start the Thrive VM")
@@ -60,18 +46,16 @@ func updateMenu() {
 		systray.AddSeparator()
 		systray.AddMenuItem("Status", "Show VM status")
 		systray.AddMenuItem("Quit Thrive", "Quit Thrive Desktop")
-		menuInitialized = true
 
-		// Set up click handlers
 		go func() {
 			for {
 				select {
 				case <-itemStart.ClickedCh:
-					exec.Command("thrive", "desktop", "start").Run()
+					exec.CommandContext(context.Background(), "thrive", "desktop", "start").Run()
 				case <-itemRestart.ClickedCh:
-					exec.Command("thrive", "desktop", "restart").Run()
+					exec.CommandContext(context.Background(), "thrive", "desktop", "restart").Run()
 				case <-itemStop.ClickedCh:
-					exec.Command("thrive", "desktop", "stop").Run()
+					exec.CommandContext(context.Background(), "thrive", "desktop", "stop").Run()
 				}
 			}
 		}()
@@ -81,9 +65,11 @@ func updateMenu() {
 			for {
 				select {
 				case <-itemStatus.ClickedCh:
-					out, err := exec.Command("thrive", "desktop", "status").Output()
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					out, err := exec.CommandContext(ctx, "thrive", "desktop", "status").Output()
 					if err == nil {
-						fmt.Print(string(out))
+						log.Printf("%s", out)
 					}
 				}
 			}
@@ -98,11 +84,23 @@ func updateMenu() {
 				}
 			}
 		}()
+	})
 
-		return
-	}
+	go func() {
+		for {
+			time.Sleep(pollInterval)
+			newState, err := vm.ReadVMState()
+			if err == nil && (currentState == nil || newState.Running != currentState.Running) {
+				currentState = newState
+				updateVisibility()
+			}
+		}
+	}()
+}
 
-	// Update visibility based on state
+func onExit() {}
+
+func updateVisibility() {
 	if currentState != nil && currentState.Running {
 		statusText.SetTitle("● Thrive Running")
 		itemStart.Hide()
