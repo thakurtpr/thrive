@@ -50,7 +50,9 @@ func (b *hyperVBridge) Exec(ctx context.Context, cmd string, args []string, opts
 	}
 
 	var resp map[string]any
-	json.Unmarshal(respData[:n], &resp)
+	if err := json.Unmarshal(respData[:n], &resp); err != nil {
+		return nil, fmt.Errorf("invalid daemon response: %w", err)
+	}
 
 	if errMsg, ok := resp["error"].(map[string]any); ok {
 		return nil, fmt.Errorf("daemon error: %s", errMsg["message"])

@@ -38,8 +38,8 @@ func main() {
 		log.Fatalf("thrived: failed to listen on %s: %v", socketPath, err)
 	}
 
-	// Chmod socket so CLI can connect
-	if err := os.Chmod(socketPath, 0666); err != nil {
+	// Chmod socket so CLI can connect (restrict to owner and group only)
+	if err := os.Chmod(socketPath, 0660); err != nil {
 		log.Fatalf("thrived: failed to chmod socket: %v", err)
 	}
 

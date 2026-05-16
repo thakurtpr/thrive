@@ -56,7 +56,10 @@ func psViaVMBridge(cmd *cobra.Command, args []string) error {
 		id := cm["id"].(string)[:12]
 		image := cm["image"].(string)
 		status := cm["status"].(string)
-		pid := int(cm["pid"].(float64))
+		pid := 0
+		if pidFloat, ok := cm["pid"].(float64); ok {
+			pid = int(pidFloat)
+		}
 		fmt.Printf("%-13s %-9s %-9s %d\n", id, image, status, pid)
 	}
 
