@@ -25,6 +25,7 @@ func main() {
 		commands.PushCmd(),
 		commands.PullCmd(),
 		commands.SecretCmd(),
+		commands.MetricsCmd(),
 		commands.SystemCmd(),
 	)
 	if err := root.Execute(); err != nil {
