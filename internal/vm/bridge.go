@@ -4,7 +4,6 @@ package vm
 
 import (
 	"context"
-	"fmt"
 	"io"
 )
 
@@ -20,19 +19,4 @@ type Bridge interface {
 	ExecStream(ctx context.Context, cmd string, args []string, opts map[string]any, out io.Writer) error
 
 	Close() error
-}
-
-// Dial returns a platform-appropriate Bridge.
-// vm_type values: "darwin-hv", "hyperv", "wsl2"
-func Dial(ctx context.Context, vmType string) (Bridge, error) {
-	switch vmType {
-	case "darwin-hv":
-		return newVSOCKBridge()
-	case "hyperv":
-		return newHyperVBridge()
-	case "wsl2":
-		return newWSL2Bridge()
-	default:
-		return nil, fmt.Errorf("unknown vm type: %s", vmType)
-	}
 }
