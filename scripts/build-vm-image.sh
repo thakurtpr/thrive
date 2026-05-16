@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Ensure go-installed tools (linuxkit) are on PATH
+export PATH="$(go env GOPATH)/bin:$PATH"
+
 ARCH=${1:-arm64}
 VFKIT_VERSION=0.5.1
 OUT=thrive-vm-darwin-${ARCH}.tar.gz
