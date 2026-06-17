@@ -1,0 +1,24 @@
+[Unit]
+Description=Thrive container runtime daemon
+After=network.target
+Requires=thrive.socket
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/thrived
+Restart=on-failure
+RestartSec=5
+KillMode=process
+Delegate=yes
+LimitNOFILE=1048576
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+
+# cgroup v2 accounting — containers run under thrive-{id}.scope slices
+Slice=system.slice
+CPUAccounting=yes
+MemoryAccounting=yes
+
+[Install]
+WantedBy=multi-user.target

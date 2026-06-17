@@ -1,6 +1,7 @@
 .PHONY: build test test-cover race vet lint clean install \
         build-all build-linux build-darwin build-windows test-desktop \
-        build-vm-image install-linuxkit
+        build-vm-image install-linuxkit \
+        install-systemd uninstall-systemd
 
 GOOS ?= linux
 BINARY := bin/thrive
@@ -60,3 +61,13 @@ build-vm-image:
 
 install-linuxkit:
 	go install github.com/linuxkit/linuxkit/src/cmd/linuxkit@latest
+
+install-systemd: ## Install systemd units to /etc/systemd/system/
+	install -Dm644 debian/thrive.socket  /etc/systemd/system/thrive.socket
+	install -Dm644 debian/thrive.service /etc/systemd/system/thrive.service
+	systemctl daemon-reload
+
+uninstall-systemd: ## Remove systemd units
+	systemctl disable --now thrive.socket thrive.service || true
+	rm -f /etc/systemd/system/thrive.socket /etc/systemd/system/thrive.service
+	systemctl daemon-reload
