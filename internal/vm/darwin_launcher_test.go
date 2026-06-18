@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build darwin
 
 package vm
 
@@ -13,6 +13,7 @@ import (
 )
 
 func TestDarwinLauncher_Start_ReturnsClearErrorWhenVfkitMissing(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // prevent real bundled vfkit from being found
 	l := &darwinLauncher{
 		starter:  func(string, ...string) (int, error) { t.Fatal("starter must not be called when binary missing"); return 0, nil },
 		lookPath: func(file string) (string, error) { return "", exec.ErrNotFound },
@@ -31,6 +32,7 @@ func TestDarwinLauncher_Start_ReturnsClearErrorWhenVfkitMissing(t *testing.T) {
 }
 
 func TestDarwinLauncher_Start_SpawnsVfkitWithCorrectArgs(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // prevent real bundled vfkit from shadowing lookPath
 	var (
 		capturedName string
 		capturedArgs []string
@@ -41,7 +43,8 @@ func TestDarwinLauncher_Start_SpawnsVfkitWithCorrectArgs(t *testing.T) {
 			capturedArgs = args
 			return 4242, nil
 		},
-		lookPath: func(file string) (string, error) { return "/opt/homebrew/bin/vfkit", nil },
+		lookPath:        func(file string) (string, error) { return "/opt/homebrew/bin/vfkit", nil },
+		prepareListener: func() error { return nil },
 	}
 
 	state, err := l.Start(context.Background(), &Config{MemoryMB: 4096, CPUCount: 4, VMType: "darwin-hv"})
@@ -76,9 +79,11 @@ func TestDarwinLauncher_Start_SpawnsVfkitWithCorrectArgs(t *testing.T) {
 }
 
 func TestDarwinLauncher_Start_PropagatesStarterError(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // prevent real bundled vfkit from shadowing lookPath
 	l := &darwinLauncher{
-		starter:  func(string, ...string) (int, error) { return 0, errors.New("fork failed") },
-		lookPath: func(file string) (string, error) { return "/usr/bin/vfkit", nil },
+		starter:         func(string, ...string) (int, error) { return 0, errors.New("fork failed") },
+		lookPath:        func(file string) (string, error) { return "/usr/bin/vfkit", nil },
+		prepareListener: func() error { return nil },
 	}
 
 	_, err := l.Start(context.Background(), &Config{MemoryMB: 2048, CPUCount: 2, VMType: "darwin-hv"})
@@ -151,6 +156,7 @@ func TestDarwinLauncher_Start_UsesBundledVfkitWhenPresent(t *testing.T) {
 			lookPathCalled = true
 			return "", exec.ErrNotFound
 		},
+		prepareListener: func() error { return nil },
 	}
 
 	_, err := l.Start(context.Background(), &Config{MemoryMB: 2048, CPUCount: 2, VMType: "darwin-hv"})
@@ -176,7 +182,8 @@ func TestDarwinLauncher_Start_FallsBackToPathWhenBundledMissing(t *testing.T) {
 			capturedName = name
 			return 5678, nil
 		},
-		lookPath: func(file string) (string, error) { return "/usr/local/bin/vfkit", nil },
+		lookPath:        func(file string) (string, error) { return "/usr/local/bin/vfkit", nil },
+		prepareListener: func() error { return nil },
 	}
 
 	_, err := l.Start(context.Background(), &Config{MemoryMB: 2048, CPUCount: 2, VMType: "darwin-hv"})

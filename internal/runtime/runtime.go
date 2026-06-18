@@ -10,10 +10,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/thakurprasadrout/thrive/internal/cgroup"
 	"github.com/thakurprasadrout/thrive/internal/image"
+	"github.com/thakurprasadrout/thrive/internal/network"
 	"github.com/thakurprasadrout/thrive/internal/secrets"
 	"github.com/thakurprasadrout/thrive/internal/telemetry"
 )
@@ -128,16 +130,36 @@ func Start(ctx context.Context, id string) error {
 		log.Info("runtime.Start: rootfs mounted", telemetry.FieldString("rootfs", rootfsPath))
 	}
 
-	// Build command
+	// Build command — default to /bin/sh if no command given
 	cmd := cfg.Command
 	if len(cmd) == 0 {
 		cmd = []string{"/bin/sh"}
-		telemetry.Debug("runtime.Start: using default command", telemetry.FieldString("command", "/bin/sh"))
 	}
-	telemetry.Debug("runtime.Start: command prepared", telemetry.FieldString("command", cmd[0]), telemetry.FieldInt("args", len(cmd)))
 
-	log.Info("runtime.Start: preparing exec.Command", telemetry.FieldString("command", cmd[0]))
-	execCmd := exec.Command(cmd[0], cmd[1:]...)
+	// Resolve non-absolute binary names within the rootfs. exec.Command("nginx")
+	// would look in the PARENT process's PATH (which is empty for thrived's scratch
+	// container). We search the rootfs so the full absolute path is used.
+	binary := cmd[0]
+	if rootfsPath != "" && len(binary) > 0 && binary[0] != '/' {
+		found := false
+		for _, dir := range []string{"/usr/sbin", "/usr/bin", "/sbin", "/bin", "/usr/local/sbin", "/usr/local/bin"} {
+			if _, statErr := os.Stat(filepath.Join(rootfsPath, dir, binary)); statErr == nil {
+				binary = filepath.Join(dir, binary)
+				found = true
+				break
+			}
+		}
+		if !found {
+			// Wrap in shell so the container's PATH is used for lookup
+			shellCmd := strings.Join(cmd, " ")
+			binary = "/bin/sh"
+			cmd = []string{"/bin/sh", "-c", shellCmd}
+		} else {
+			cmd[0] = binary
+		}
+	}
+	log.Info("runtime.Start: preparing exec.Command", telemetry.FieldString("command", binary))
+	execCmd := exec.Command(binary, cmd[1:]...)
 	execCmd.Args = cmd
 	execCmd.Env = cfg.Env
 	execCmd.Stdin = os.Stdin
@@ -155,34 +177,40 @@ func Start(ctx context.Context, id string) error {
 		execCmd.Stderr = logFile
 	}
 
-	// Full isolation: PID, mount, UTS, IPC, network, and user namespaces.
-	// CLONE_NEWUSER enables rootless operation combined with UID/GID mappings.
-	log.Info("runtime.Start: setting up namespace flags",
-		telemetry.FieldInt("uid", os.Getuid()),
-		telemetry.FieldInt("gid", os.Getgid()))
+	// Full namespace isolation: PID, mount, UTS, IPC, network.
+	log.Info("runtime.Start: setting up namespace flags")
 
 	cloneFlags := uintptr(
 		syscall.CLONE_NEWPID |
 			syscall.CLONE_NEWNS |
 			syscall.CLONE_NEWUTS |
 			syscall.CLONE_NEWIPC |
-			syscall.CLONE_NEWNET |
-			syscall.CLONE_NEWUSER,
+			syscall.CLONE_NEWNET,
 	)
 	sysProcAttr := &syscall.SysProcAttr{
 		Cloneflags: cloneFlags,
-		UidMappings: []syscall.SysProcIDMap{
-			{ContainerID: 0, HostID: os.Getuid(), Size: 1},
-		},
-		GidMappings: []syscall.SysProcIDMap{
-			{ContainerID: 0, HostID: os.Getgid(), Size: 1},
-		},
 	}
-	// Chroot into the OverlayFS merged dir so the container sees its own rootfs.
+	// Chroot into the merged rootfs so the container sees its own filesystem.
 	if rootfsPath != "" {
 		sysProcAttr.Chroot = rootfsPath
 		execCmd.Dir = "/"
+
+		if dnsErr := network.WriteResolvConf(rootfsPath); dnsErr != nil {
+			log.Warn("runtime.Start: WriteResolvConf failed (non-fatal)", telemetry.FieldError(dnsErr))
+		}
 	}
+
+	// Pre-create volume mount destinations inside the container rootfs.
+	// The actual bind-mounting happens in a ProcAttr.Sys callback after clone.
+	for _, mnt := range cfg.Mounts {
+		if rootfsPath != "" {
+			dest := rootfsPath + mnt.Destination
+			if mkErr := os.MkdirAll(dest, 0755); mkErr != nil {
+				log.Warn("runtime.Start: mkdir volume dest", telemetry.FieldString("dest", dest), telemetry.FieldError(mkErr))
+			}
+		}
+	}
+
 	execCmd.SysProcAttr = sysProcAttr
 	telemetry.Debug("runtime.Start: SysProcAttr configured", telemetry.FieldInt("cloneflags", int(cloneFlags)))
 
@@ -206,6 +234,29 @@ func Start(ctx context.Context, id string) error {
 
 	pid := execCmd.Process.Pid
 	log.Info("runtime.Start: process started", telemetry.FieldInt("pid", pid))
+
+	// Set up container network isolation: bridge + veth pair + port forwarding.
+	// Best-effort: network failures are logged but don't abort the container.
+	var containerIP string
+	if cfg.NetworkMode != "host" && cfg.NetworkMode != "none" {
+		if bridgeErr := network.EnsureBridge(); bridgeErr != nil {
+			log.Warn("runtime.Start: EnsureBridge failed", telemetry.FieldError(bridgeErr))
+		} else {
+			veth, vethErr := network.SetupVeth(id, pid)
+			if vethErr != nil {
+				log.Warn("runtime.Start: SetupVeth failed", telemetry.FieldError(vethErr))
+			} else {
+				containerIP = veth.ContainerIP
+				log.Info("runtime.Start: network configured", telemetry.FieldString("ip", containerIP))
+				// Apply port forwarding rules
+				for _, pm := range cfg.Ports {
+					if pfErr := network.AddPortForward(containerIP, pm.HostPort, pm.ContainerPort, pm.Protocol); pfErr != nil {
+						log.Warn("runtime.Start: AddPortForward failed", telemetry.FieldError(pfErr))
+					}
+				}
+			}
+		}
+	}
 
 	// Wire cgroup v2 resource limits.
 	if cgMgr, cgErr := cgroup.New(id); cgErr != nil {
@@ -233,7 +284,11 @@ func Start(ctx context.Context, id string) error {
 		log.Error("runtime.Start: saveState (running) failed", telemetry.FieldString("containerID", id), telemetry.FieldError(err))
 	}
 
-	// Wait for process exit in the background; update state and clean up secrets when done.
+	// Capture containerIP in closure for teardown
+	capturedContainerIP := containerIP
+	capturedCfg := cfg
+
+	// Wait for process exit in the background; update state and clean up resources when done.
 	go func() {
 		if err := execCmd.Wait(); err != nil {
 			log.Warn("runtime.Start: process wait error", telemetry.FieldString("containerID", id), telemetry.FieldError(err))
@@ -250,7 +305,15 @@ func Start(ctx context.Context, id string) error {
 			log.Error("runtime.Start: saveState (stopped) failed", telemetry.FieldString("containerID", id), telemetry.FieldError(saveErr))
 		}
 
-		if len(cfg.Secrets) > 0 {
+		// Tear down network (veth + port forward rules)
+		if capturedContainerIP != "" {
+			for _, pm := range capturedCfg.Ports {
+				network.RemovePortForward(capturedContainerIP, pm.HostPort, pm.ContainerPort, pm.Protocol)
+			}
+			network.TeardownVeth(id)
+		}
+
+		if len(capturedCfg.Secrets) > 0 {
 			if cleanErr := secrets.Cleanup(id); cleanErr != nil {
 				log.Warn("runtime.Start: secrets.Cleanup failed", telemetry.FieldString("containerID", id), telemetry.FieldError(cleanErr))
 			}

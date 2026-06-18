@@ -73,6 +73,34 @@ github.com/thakurprasadrout/thrive
 - cgroup v2 requires systemd or manual cgroupfs mounting in some distros
 - FUSE requires /dev/fuse access — check and error clearly if missing
 
+## vsock direction + timing (Phase 9 PM, 2026-05-17) — CRITICAL
+
+### vfkit virtio-vsock is GUEST→HOST (not HOST→GUEST)
+`--device virtio-vsock,port=N,socketURL=/path/to/sock` does NOT mean vfkit creates the socket.
+When the **guest** connects to AF_VSOCK(CID_HOST=2, port=N), vfkit **dials** socketURL on the host.
+- HOST must `Listen` and `Accept` (server role).
+- GUEST thrived must `Connect` out (client role).
+- Confirmed empirically via `lsof` — socket never appeared when vfkit was expected to create it.
+
+### Socket must exist BEFORE vfkit spawns
+vfkit fires a startup probe ~1 second after boot when the guest kernel initialises virtio-vsock.
+If host socket doesn't exist → ECONNREFUSED → vsock proxy permanently broken for that session.
+Fix: `PrepareVSOCKListener()` before `exec`'ing vfkit in `darwinLauncher.Start()`.
+
+### WaitForBoot must retry Dial (not just retry ping)
+First accepted connection is vfkit's startup probe, not thrived. Probe disconnects immediately.
+`Exec("ping")` → EOF. Must close bridge and call `Dial` (Accept) again in loop until ping succeeds.
+Pattern: 2-minute deadline, each Dial waits ≤5 seconds (Accept deadline on UnixListener).
+
+### Unix socket path limit on macOS: 104 bytes
+`net.Listen("unix", path)` returns `bind: invalid argument` if path ≥ 104 bytes.
+`t.TempDir()` paths include test name; long test names exceed limit.
+Workaround: `os.MkdirTemp("/tmp", "thrive_test_")` for any test needing a real Unix socket.
+
+### AF_VSOCK CID constants (golang.org/x/sys/unix)
+- `unix.VMADDR_CID_HOST = 2` — host CID from inside guest
+- Port must match `--device virtio-vsock,port=N,...` in vfkit args (default 1024)
+
 ## Desktop subsystem (Phase 9, 2026-05-17)
 
 ### Architecture

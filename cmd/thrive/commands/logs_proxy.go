@@ -1,10 +1,9 @@
-// cmd/thrive/commands/logs_proxy.go
-
 //go:build !linux
 
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -14,47 +13,37 @@ import (
 
 func LogsCmd() *cobra.Command {
 	logs := &cobra.Command{
-		Use:   "logs",
+		Use:   "logs [container]",
 		Short: "Fetch container logs",
-		RunE:  logsViaVMBridge,
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			containerID := args[0]
+			follow, _ := cmd.Flags().GetBool("follow")
+			opts := map[string]any{"follow": follow}
+
+			if follow {
+				return vm.DialControlStream(ctx, "logs", []string{containerID}, opts, os.Stdout)
+			}
+
+			data, err := vm.DialControl(ctx, "logs", []string{containerID}, opts)
+			if err != nil {
+				return fmt.Errorf("logs failed: %w", err)
+			}
+
+			// Response format: {"output":"log content here\n"}
+			var result map[string]any
+			if jsonErr := json.Unmarshal(data, &result); jsonErr == nil {
+				if output, ok := result["output"].(string); ok {
+					fmt.Print(output)
+					return nil
+				}
+			}
+			fmt.Print(string(data))
+			return nil
+		},
 	}
 
 	logs.Flags().BoolP("follow", "f", false, "Follow log output")
-
 	return logs
-}
-
-func logsViaVMBridge(cmd *cobra.Command, args []string) error {
-	if len(args) < 1 {
-		return fmt.Errorf("logs requires a container ID")
-	}
-
-	ctx := cmd.Context()
-	containerID := args[0]
-	follow, _ := cmd.Flags().GetBool("follow")
-
-	cfg, err := vm.ReadConfig()
-	if err != nil {
-		return fmt.Errorf("run `thrive desktop init` first: %w", err)
-	}
-
-	bridge, err := vm.Dial(ctx, cfg.VMType)
-	if err != nil {
-		return fmt.Errorf("failed to connect to VM: %w\nRun `thrive desktop start` first.", err)
-	}
-	defer bridge.Close()
-
-	opts := map[string]any{"follow": follow}
-
-	if follow {
-		return bridge.ExecStream(ctx, "logs", []string{containerID}, opts, os.Stdout)
-	}
-
-	data, err := bridge.Exec(ctx, "logs", []string{containerID}, opts)
-	if err != nil {
-		return fmt.Errorf("logs failed: %w", err)
-	}
-
-	fmt.Print(string(data))
-	return nil
 }

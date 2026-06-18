@@ -19,16 +19,29 @@ type Request struct {
 }
 
 type Response struct {
-	ID     int         `json:"id"`
-	Result interface{} `json:"result,omitempty"`
-	Stream string      `json:"stream,omitempty"`
-	EOF    bool        `json:"eof,omitempty"`
-	Error  *ErrorInfo  `json:"error,omitempty"`
+	ID     int        `json:"id"`
+	Result any        `json:"result,omitempty"`
+	Stream string     `json:"stream,omitempty"`
+	EOF    bool       `json:"eof,omitempty"`
+	Error  *ErrorInfo `json:"error,omitempty"`
 }
 
 type ErrorInfo struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+}
+
+func writeResponse(w io.Writer, resp *Response) {
+	data, err := json.Marshal(resp)
+	if err != nil {
+		log.Printf("thrived: marshal error: %v", err)
+		return
+	}
+	w.Write(append(data, '\n'))
+}
+
+func sendError(w io.Writer, id int, code int, msg string) {
+	writeResponse(w, &Response{ID: id, Error: &ErrorInfo{Code: code, Message: msg}})
 }
 
 func handleConn(conn net.Conn, ctx context.Context) {
@@ -54,26 +67,11 @@ func handleConn(conn net.Conn, ctx context.Context) {
 
 		var req Request
 		if err := json.Unmarshal(line, &req); err != nil {
-			sendError(writer, req.ID, 1, "invalid JSON: "+err.Error())
+			sendError(writer, 0, 1, "invalid JSON: "+err.Error())
 			return
 		}
 
-		resp := dispatch(ctx, &req)
-		data, err := json.Marshal(resp)
-		if err != nil {
-			sendError(writer, req.ID, 1, "marshal error: "+err.Error())
-			return
-		}
-
-		if _, err := writer.Write(append(data, '\n')); err != nil {
-			log.Printf("thrived: write error: %v", err)
-			return
-		}
+		// dispatch writes directly to writer (supports streaming handlers)
+		dispatch(ctx, &req, writer)
 	}
-}
-
-func sendError(w io.Writer, id int, code int, msg string) {
-	resp := Response{ID: id, Error: &ErrorInfo{Code: code, Message: msg}}
-	data, _ := json.Marshal(resp)
-	w.Write(append(data, '\n'))
 }

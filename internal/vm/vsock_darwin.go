@@ -8,30 +8,64 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"time"
 )
 
-type vsockBridge struct {
-	conn net.Conn
+// vsockListener is created before vfkit spawns so vfkit's startup probe
+// (which fires ~1 second after boot when the guest kernel initialises
+// virtio-vsock) succeeds. Kept package-level so PrepareVSOCKListener and
+// newVSOCKBridge share state without threading through the call stack.
+var vsockListener net.Listener
+
+// PrepareVSOCKListener creates the vsock Unix socket and starts listening
+// before vfkit is spawned. Must be called from darwinLauncher.Start before
+// exec'ing vfkit, otherwise vfkit logs "connection refused" during its
+// startup probe and the vsock proxy is permanently broken.
+func PrepareVSOCKListener() error {
+	sockPath := filepath.Join(ThriveDir(), "vm", "vsock.sock")
+	_ = os.Remove(sockPath)
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		return fmt.Errorf("vsock: prepare listener %s: %w", sockPath, err)
+	}
+	vsockListener = ln
+	return nil
 }
 
-// newVSOCKBridge connects to vfkit's virtio-vsock Unix socket proxy.
-// vfkit creates vsock.sock after the VM starts; we retry for up to 5 seconds.
-func newVSOCKBridge() (Bridge, error) {
-	sockPath := filepath.Join(ThriveDir(), "vm", "vsock.sock")
-	var (
-		conn net.Conn
-		err  error
-	)
-	for i := 0; i < 10; i++ {
-		conn, err = net.DialTimeout("unix", sockPath, time.Second)
-		if err == nil {
-			return &vsockBridge{conn: conn}, nil
-		}
-		time.Sleep(500 * time.Millisecond)
+// CloseVSOCKListener closes and discards the stored listener (e.g. on Stop).
+func CloseVSOCKListener() {
+	if vsockListener != nil {
+		vsockListener.Close()
+		vsockListener = nil
 	}
-	return nil, fmt.Errorf("vsock bridge: %s not ready: %w", sockPath, err)
+}
+
+type vsockBridge struct {
+	conn net.Conn
+	dec  *json.Decoder
+}
+
+// newVSOCKBridge accepts one connection from the vsock listener.
+// Auto-creates the listener if needed — thrived is in a reconnect loop and
+// connects within ~1 second of the socket appearing.
+func newVSOCKBridge() (Bridge, error) {
+	if vsockListener == nil {
+		if err := PrepareVSOCKListener(); err != nil {
+			return nil, fmt.Errorf("vsock: auto-prepare: %w", err)
+		}
+	}
+
+	_ = vsockListener.(*net.UnixListener).SetDeadline(time.Now().Add(5 * time.Second))
+	conn, err := vsockListener.Accept()
+	if err != nil {
+		vsockListener.Close()
+		vsockListener = nil
+		return nil, fmt.Errorf("vsock: accept: %w", err)
+	}
+
+	return &vsockBridge{conn: conn, dec: json.NewDecoder(conn)}, nil
 }
 
 func (b *vsockBridge) Exec(ctx context.Context, cmd string, args []string, opts map[string]any) ([]byte, error) {
@@ -42,21 +76,20 @@ func (b *vsockBridge) Exec(ctx context.Context, cmd string, args []string, opts 
 		return nil, err
 	}
 
-	if err := b.conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+	if err := b.conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
 		return nil, err
 	}
-
 	if _, err := b.conn.Write(append(data, '\n')); err != nil {
 		return nil, err
 	}
 
-	respData, err := io.ReadAll(b.conn)
-	if err != nil {
+	// 10 minutes — pull/run operations can take several minutes for large images
+	if err := b.conn.SetReadDeadline(time.Now().Add(10 * time.Minute)); err != nil {
 		return nil, err
 	}
 
 	var resp map[string]any
-	if err := json.Unmarshal(respData, &resp); err != nil {
+	if err := b.dec.Decode(&resp); err != nil {
 		return nil, err
 	}
 
@@ -75,11 +108,13 @@ func (b *vsockBridge) ExecStream(ctx context.Context, cmd string, args []string,
 		return err
 	}
 
+	if err := b.conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		return err
+	}
 	if _, err := b.conn.Write(append(data, '\n')); err != nil {
 		return err
 	}
 
-	decoder := json.NewDecoder(b.conn)
 	for {
 		select {
 		case <-ctx.Done():
@@ -87,8 +122,12 @@ func (b *vsockBridge) ExecStream(ctx context.Context, cmd string, args []string,
 		default:
 		}
 
+		if err := b.conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+			return err
+		}
+
 		var resp map[string]any
-		if err := decoder.Decode(&resp); err != nil {
+		if err := b.dec.Decode(&resp); err != nil {
 			return err
 		}
 

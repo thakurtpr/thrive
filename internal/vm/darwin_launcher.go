@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build darwin
 
 package vm
 
@@ -16,16 +16,18 @@ import (
 // Virtualization.framework CLI wrapper. Function-field injection allows
 // tests to assert subprocess contracts without spawning real processes.
 type darwinLauncher struct {
-	starter     processStarter
-	lookPath    pathLookup
-	killProcess func(pid int) error
+	starter         processStarter
+	lookPath        pathLookup
+	killProcess     func(pid int) error
+	prepareListener func() error
 }
 
 func newDarwinLauncher() *darwinLauncher {
 	return &darwinLauncher{
-		starter:     realProcessStarter,
-		lookPath:    exec.LookPath,
-		killProcess: defaultKillProcess,
+		starter:         realProcessStarter,
+		lookPath:        exec.LookPath,
+		killProcess:     defaultKillProcess,
+		prepareListener: PrepareVSOCKListener,
 	}
 }
 
@@ -54,12 +56,32 @@ func (l *darwinLauncher) Start(ctx context.Context, cfg *Config) (*VMState, erro
 	kernel := filepath.Join(vmDir, "kernel")
 	initrd := filepath.Join(vmDir, "initrd.img")
 
+	serialLog := filepath.Join(vmDir, "vm-serial.log")
+
+	// Host image store shared with VM via virtiofs
+	home, _ := os.UserHomeDir()
+	hostImages := filepath.Join(home, ".thrive", "images")
+	os.MkdirAll(hostImages, 0755)
+
 	args := []string{
 		"--memory", strconv.Itoa(cfg.MemoryMB),
 		"--cpus", strconv.Itoa(cfg.CPUCount),
-		"--bootloader", fmt.Sprintf("linux,kernel=%s,initrd=%s,cmdline=\"console=hvc0 quiet\"", kernel, initrd),
+		// ip=dhcp: kernel configures eth0 via DHCP at boot
+		"--bootloader", fmt.Sprintf("linux,kernel=%s,initrd=%s,cmdline=\"console=hvc0 console=ttyS0 ip=dhcp\"", kernel, initrd),
 		"--device", "virtio-rng",
+		"--device", "virtio-net,nat",
+		// virtiofs: shares ~/.thrive/images/ → /var/lib/thrive/images/ in VM
+		"--device", "virtio-fs,sharedDir=" + hostImages + ",mountTag=thrive-images",
 		"--device", "virtio-vsock,port=1024,socketURL=" + filepath.Join(vmDir, "vsock.sock"),
+		"--device", "virtio-serial,logFilePath=" + serialLog,
+	}
+
+	prepare := l.prepareListener
+	if prepare == nil {
+		prepare = PrepareVSOCKListener
+	}
+	if err := prepare(); err != nil {
+		return nil, err
 	}
 
 	pid, err := l.starter(binPath, args...)

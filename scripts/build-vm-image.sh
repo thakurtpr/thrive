@@ -29,6 +29,27 @@ linuxkit build \
 mv thrive-vm-kernel        $TMP/kernel
 mv thrive-vm-initrd.img    $TMP/initrd.img
 
+echo "==> Decompressing kernel (Apple Virtualization.framework requires uncompressed kernel)"
+# arm64 LinuxKit kernels are gzip-compressed; vfkit rejects compressed kernels
+if gzip -t $TMP/kernel 2>/dev/null; then
+  gzip -d < $TMP/kernel > $TMP/kernel.raw
+  mv $TMP/kernel.raw $TMP/kernel
+  echo "  decompressed with gzip: $(du -sh $TMP/kernel | cut -f1)"
+else
+  # Fallback: extract-vmlinux handles bzip2/lzma/xz/lzo/lz4 compressed kernels
+  curl -fsSL \
+    "https://raw.githubusercontent.com/torvalds/linux/master/scripts/extract-vmlinux" \
+    -o /tmp/extract-vmlinux
+  chmod +x /tmp/extract-vmlinux
+  /tmp/extract-vmlinux $TMP/kernel > $TMP/kernel.raw
+  if [ -s $TMP/kernel.raw ]; then
+    mv $TMP/kernel.raw $TMP/kernel
+    echo "  decompressed with extract-vmlinux: $(du -sh $TMP/kernel | cut -f1)"
+  else
+    echo "Warning: kernel decompression failed — packaging as-is"
+  fi
+fi
+
 echo "==> Downloading vfkit v${VFKIT_VERSION} (self-contained bundle)"
 curl -fsSL \
   "https://github.com/crc-org/vfkit/releases/download/v${VFKIT_VERSION}/vfkit" \

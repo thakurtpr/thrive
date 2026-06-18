@@ -17,17 +17,28 @@ func main() {
 	}
 	root.AddCommand(
 		commands.RunCmd(),
+		commands.ExecCmd(),
 		commands.PsCmd(),
 		commands.KillCmd(),
+		commands.StopCmd(),
+		commands.StartCmd(),
+		commands.RestartCmd(),
 		commands.RmCmd(),
 		commands.LogsCmd(),
 		commands.ImagesCmd(),
+		commands.RmiCmd(),
+		commands.InspectCmd(),
 		commands.BuildCmd(),
 		commands.PushCmd(),
 		commands.PullCmd(),
+		commands.ComposeCmd(),
 		commands.SecretCmd(),
 		commands.MetricsCmd(),
 		commands.SystemCmd(),
+		commands.TagCmd(),
+		commands.CpCmd(),
+		commands.SignCmd(),
+		commands.VerifyCmd(),
 		commands.DesktopCmd(),
 	)
 	if err := root.Execute(); err != nil {

@@ -27,29 +27,7 @@ import (
 	"github.com/thakurprasadrout/thrive/internal/telemetry"
 )
 
-type Image struct {
-	Ref    string
-	Digest string
-	Layers []Layer
-}
-
-type Layer struct {
-	Digest string
-	Size   int64
-	Path   string
-}
-
-type PullOptions struct {
-	Username  string
-	Password  string
-	PlainHTTP bool
-}
-
-type PushOptions struct {
-	Username  string
-	Password  string
-	PlainHTTP bool
-}
+// Image, Layer, PullOptions, PushOptions are defined in types.go
 
 // Push pushes a locally stored image to a remote registry by re-taring
 // the extracted layer directories and uploading them via go-containerregistry.
@@ -62,7 +40,7 @@ func Push(ctx context.Context, ref string, opts PushOptions) error {
 		return fmt.Errorf("image.Push: parse reference: %w", err)
 	}
 
-	imgDir := filepath.Join("/var/lib/thrive/images", parsed.String())
+	imgDir := filepath.Join("/var/lib/thrive/images", SafeRef(parsed.String()))
 	metaPath := filepath.Join(imgDir, "manifest.json")
 	data, err := os.ReadFile(metaPath)
 	if err != nil {
@@ -155,7 +133,7 @@ func Pull(ctx context.Context, ref string, opts PullOptions) (*Image, error) {
 	}
 	telemetry.Debug("image.Pull: reference parsed", telemetry.FieldString("name", parsed.Name()))
 
-	imgDir := filepath.Join("/var/lib/thrive/images", parsed.String())
+	imgDir := filepath.Join("/var/lib/thrive/images", SafeRef(parsed.String()))
 	log.Info("image.Pull: creating image directory", telemetry.FieldString("path", imgDir))
 
 	if err := os.MkdirAll(imgDir, 0755); err != nil {
@@ -334,18 +312,26 @@ func Mount(ctx context.Context, imageRef, containerID string) (string, error) {
 	}
 	log.Info("image.Mount: kernel overlay failed, trying fuse-overlayfs", telemetry.FieldError(mountErr))
 
-	// Rootless fallback: fuse-overlayfs.
-	fuseArgs := []string{
-		"-o", overlayOpts,
-		mergedDir,
-	}
+	// Try fuse-overlayfs as secondary fallback
+	fuseArgs := []string{"-o", overlayOpts, mergedDir}
 	out, fuseErr := exec.CommandContext(ctx, "fuse-overlayfs", fuseArgs...).CombinedOutput()
-	if fuseErr != nil {
-		log.Error("image.Mount: fuse-overlayfs failed", telemetry.FieldString("output", string(out)), telemetry.FieldError(fuseErr))
-		return "", fmt.Errorf("image.Mount: overlay mount failed (kernel: %v, fuse: %v)", mountErr, fuseErr)
+	if fuseErr == nil {
+		log.Info("image.Mount: fuse-overlayfs mounted", telemetry.FieldString("merged", mergedDir))
+		return mergedDir, nil
 	}
+	log.Info("image.Mount: fuse-overlayfs also failed, falling back to copy",
+		telemetry.FieldString("output", string(out)))
 
-	log.Info("image.Mount: fuse-overlayfs mounted", telemetry.FieldString("merged", mergedDir))
+	// Final fallback: copy layer files into mergedDir.
+	// lowerParts[0]=newest, lowerParts[N-1]=oldest. Copy oldest→newest so that
+	// newer layers override older files (correct image merge order).
+	for i := len(lowerParts) - 1; i >= 0; i-- {
+		if copyErr := copyDir(lowerParts[i], mergedDir); copyErr != nil {
+			return "", fmt.Errorf("image.Mount: copy layer[%d]: %w", i, copyErr)
+		}
+	}
+	log.Info("image.Mount: using copy-based rootfs (overlayfs unavailable)",
+		telemetry.FieldString("merged", mergedDir))
 	return mergedDir, nil
 }
 
@@ -360,6 +346,53 @@ func Unmount(ctx context.Context, containerID string) error {
 	}
 	log.Info("image.Unmount: completed", telemetry.FieldString("containerID", containerID))
 	return nil
+}
+
+// copyDir recursively copies src into dst, preserving file modes and symlinks.
+func copyDir(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		target := filepath.Join(dst, rel)
+
+		// Handle symlinks
+		if info.Mode()&os.ModeSymlink != 0 {
+			link, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			os.MkdirAll(filepath.Dir(target), 0755)
+			os.Remove(target)
+			return os.Symlink(link, target)
+		}
+
+		if info.IsDir() {
+			return os.MkdirAll(target, info.Mode())
+		}
+
+		os.MkdirAll(filepath.Dir(target), 0755)
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		dst, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
+		if err != nil {
+			return err
+		}
+		defer dst.Close()
+		_, err = io.Copy(dst, f)
+		return err
+	})
 }
 
 // extractTar extracts a tar stream into destDir, handling files, dirs, and symlinks.

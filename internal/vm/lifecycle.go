@@ -9,10 +9,7 @@ import (
 	"time"
 )
 
-const (
-	bootTimeoutSeconds = 30
-	bootPollInterval   = 1 * time.Second
-)
+const bootTimeout = 2 * time.Minute
 
 // launcher is the platform-agnostic VM lifecycle contract.
 type launcher interface {
@@ -66,30 +63,43 @@ func Stop(ctx context.Context) error {
 	return WriteVMState(state)
 }
 
-// WaitForBoot blocks until the VM is reachable via the bridge
-func WaitForBoot(ctx context.Context, cfg *Config) error {
-	bridge, err := Dial(ctx, cfg.VMType)
-	if err != nil {
-		return err
-	}
-	defer bridge.Close()
-
-	for i := 0; i < bootTimeoutSeconds; i++ {
+// WaitForBoot blocks until the VM daemon is reachable and returns the live
+// bridge to thrived. The caller MUST close the bridge when done.
+func WaitForBoot(ctx context.Context, cfg *Config) (Bridge, error) {
+	deadline := time.Now().Add(bootTimeout)
+	connCount := 0
+	acceptTimeouts := 0
+	for {
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("vm: boot timeout after %s (connections: %d, accept-timeouts: %d)",
+				bootTimeout, connCount, acceptTimeouts)
+		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		default:
 		}
 
-		if _, err := bridge.Exec(ctx, "ping", nil, nil); err == nil {
-			log.Printf("vm: boot complete after %d seconds", i)
-			return nil
+		bridge, err := Dial(ctx, cfg.VMType)
+		if err != nil {
+			acceptTimeouts++
+			if acceptTimeouts == 1 || acceptTimeouts%6 == 0 {
+				log.Printf("vm: waiting for thrived (%d timeouts, %d connections)...", acceptTimeouts, connCount)
+			}
+			continue
 		}
 
-		time.Sleep(bootPollInterval)
-	}
+		connCount++
+		log.Printf("vm: connection #%d accepted — pinging...", connCount)
 
-	return fmt.Errorf("vm: boot timeout after %d seconds", bootTimeoutSeconds)
+		_, pingErr := bridge.Exec(ctx, "ping", nil, nil)
+		if pingErr == nil {
+			log.Printf("vm: boot complete")
+			return bridge, nil // return the live bridge — do NOT close it
+		}
+		bridge.Close() // wrong connection (probe); close and retry
+		log.Printf("vm: ping #%d failed: %v — retrying...", connCount, pingErr)
+	}
 }
 
 // HealthCheck pings the VM daemon and returns nil if it's responsive

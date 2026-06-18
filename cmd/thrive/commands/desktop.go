@@ -103,12 +103,15 @@ func runDesktopStart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to start VM: %w", err)
 	}
 
-	if err := vm.WaitForBoot(cmd.Context(), cfg); err != nil {
+	bridge, err := vm.WaitForBoot(cmd.Context(), cfg)
+	if err != nil {
 		return fmt.Errorf("VM failed to boot: %w", err)
 	}
+	// bridge is kept open and reused by ServeControlSocket for all commands
 
 	state, err := vm.ReadVMState()
 	if err != nil {
+		bridge.Close()
 		return fmt.Errorf("failed to read VM state: %w", err)
 	}
 	newState := &vm.VMState{
@@ -121,10 +124,16 @@ func runDesktopStart(cmd *cobra.Command, args []string) error {
 		LastStart:   state.LastStart,
 	}
 	if err := vm.WriteVMState(newState); err != nil {
+		bridge.Close()
 		return fmt.Errorf("failed to write VM state: %w", err)
 	}
 
 	fmt.Println("Thrive Desktop VM started.")
+	fmt.Println("Run `thrive desktop stop` in another terminal to stop.")
+
+	// Serve commands until the VM stops — blocks, keeps control socket alive.
+	vm.ServeControlSocket(cmd.Context(), cfg, bridge)
+
 	return nil
 }
 
@@ -168,12 +177,14 @@ func runDesktopRestart(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to start VM: %w", err)
 	}
 
-	if err := vm.WaitForBoot(cmd.Context(), cfg); err != nil {
+	bridge, err := vm.WaitForBoot(cmd.Context(), cfg)
+	if err != nil {
 		return fmt.Errorf("VM failed to boot: %w", err)
 	}
 
 	state, err := vm.ReadVMState()
 	if err != nil {
+		bridge.Close()
 		return fmt.Errorf("failed to read VM state: %w", err)
 	}
 	newState := &vm.VMState{
@@ -186,10 +197,13 @@ func runDesktopRestart(cmd *cobra.Command, args []string) error {
 		LastStart:   state.LastStart,
 	}
 	if err := vm.WriteVMState(newState); err != nil {
+		bridge.Close()
 		return fmt.Errorf("failed to write VM state: %w", err)
 	}
 
 	fmt.Println("Thrive Desktop VM restarted.")
+	fmt.Println("Run `thrive desktop stop` in another terminal to stop.")
+	vm.ServeControlSocket(cmd.Context(), cfg, bridge)
 	return nil
 }
 

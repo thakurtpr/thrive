@@ -35,6 +35,10 @@ func buildTar(t *testing.T, entries []struct {
 	return buf
 }
 
+// ---------------------------------------------------------------------------
+// extractTar
+// ---------------------------------------------------------------------------
+
 func TestExtractTar_Dir(t *testing.T) {
 	dest := t.TempDir()
 	buf := buildTar(t, []struct {
@@ -73,6 +77,48 @@ func TestExtractTar_RegularFile(t *testing.T) {
 	}
 }
 
+func TestExtractTar_BasicFiles(t *testing.T) {
+	// Arrange — directory + two regular files, one nested
+	dest := t.TempDir()
+	file1Body := []byte("file one content")
+	file2Body := []byte("file two content")
+
+	buf := buildTar(t, []struct {
+		hdr  *tar.Header
+		body []byte
+	}{
+		{hdr: &tar.Header{Typeflag: tar.TypeDir, Name: "subdir/", Mode: 0755}},
+		{hdr: &tar.Header{Typeflag: tar.TypeReg, Name: "subdir/file1.txt", Mode: 0644, Size: int64(len(file1Body))}, body: file1Body},
+		{hdr: &tar.Header{Typeflag: tar.TypeReg, Name: "file2.txt", Mode: 0644, Size: int64(len(file2Body))}, body: file2Body},
+	})
+
+	// Act
+	if err := extractTar(buf, dest); err != nil {
+		t.Fatalf("extractTar: %v", err)
+	}
+
+	// Assert — directory
+	if fi, err := os.Stat(filepath.Join(dest, "subdir")); err != nil || !fi.IsDir() {
+		t.Errorf("expected subdir to be a directory, stat err: %v", err)
+	}
+	// Assert — file1
+	got1, err := os.ReadFile(filepath.Join(dest, "subdir", "file1.txt"))
+	if err != nil {
+		t.Fatalf("read file1.txt: %v", err)
+	}
+	if !bytes.Equal(got1, file1Body) {
+		t.Errorf("file1.txt = %q, want %q", got1, file1Body)
+	}
+	// Assert — file2
+	got2, err := os.ReadFile(filepath.Join(dest, "file2.txt"))
+	if err != nil {
+		t.Fatalf("read file2.txt: %v", err)
+	}
+	if !bytes.Equal(got2, file2Body) {
+		t.Errorf("file2.txt = %q, want %q", got2, file2Body)
+	}
+}
+
 func TestExtractTar_Symlink(t *testing.T) {
 	dest := t.TempDir()
 	content := []byte("binary content")
@@ -95,6 +141,34 @@ func TestExtractTar_Symlink(t *testing.T) {
 	}
 }
 
+func TestExtractTar_Symlinks(t *testing.T) {
+	// Arrange — target file + symlink entry
+	dest := t.TempDir()
+	targetBody := []byte("target content")
+
+	buf := buildTar(t, []struct {
+		hdr  *tar.Header
+		body []byte
+	}{
+		{hdr: &tar.Header{Typeflag: tar.TypeReg, Name: "real.txt", Mode: 0644, Size: int64(len(targetBody))}, body: targetBody},
+		{hdr: &tar.Header{Typeflag: tar.TypeSymlink, Name: "link.txt", Linkname: "real.txt"}},
+	})
+
+	// Act
+	if err := extractTar(buf, dest); err != nil {
+		t.Fatalf("extractTar: %v", err)
+	}
+
+	// Assert — link.txt is a symlink pointing to real.txt
+	linkTarget, err := os.Readlink(filepath.Join(dest, "link.txt"))
+	if err != nil {
+		t.Fatalf("Readlink link.txt: %v", err)
+	}
+	if linkTarget != "real.txt" {
+		t.Errorf("symlink target = %q, want %q", linkTarget, "real.txt")
+	}
+}
+
 func TestExtractTar_PathTraversalIsSkipped(t *testing.T) {
 	dest := t.TempDir()
 	parent := filepath.Dir(dest)
@@ -110,6 +184,30 @@ func TestExtractTar_PathTraversalIsSkipped(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(parent, "escape.txt")); !os.IsNotExist(err) {
 		t.Fatal("path traversal file should not have been created")
+	}
+}
+
+func TestExtractTar_PathTraversal(t *testing.T) {
+	// Arrange — entry with ../evil name; verify nothing created outside destDir
+	destDir := t.TempDir()
+	evilBody := []byte("evil content")
+
+	buf := buildTar(t, []struct {
+		hdr  *tar.Header
+		body []byte
+	}{
+		{hdr: &tar.Header{Typeflag: tar.TypeReg, Name: "../evil.txt", Mode: 0644, Size: int64(len(evilBody))}, body: evilBody},
+	})
+
+	// Act
+	if err := extractTar(buf, destDir); err != nil {
+		t.Fatalf("extractTar: %v", err)
+	}
+
+	// Assert — nothing written inside destDir
+	entries, _ := os.ReadDir(destDir)
+	if len(entries) != 0 {
+		t.Errorf("expected destDir to be empty, got %d entries", len(entries))
 	}
 }
 
@@ -139,6 +237,51 @@ func TestExtractTar_Hardlink(t *testing.T) {
 	}
 }
 
+func TestExtractTar_HardLink(t *testing.T) {
+	// Arrange — original file + TypeLink entry
+	dest := t.TempDir()
+	origBody := []byte("original content for hardlink test")
+
+	buf := buildTar(t, []struct {
+		hdr  *tar.Header
+		body []byte
+	}{
+		{hdr: &tar.Header{Typeflag: tar.TypeReg, Name: "original.txt", Mode: 0644, Size: int64(len(origBody))}, body: origBody},
+		{hdr: &tar.Header{Typeflag: tar.TypeLink, Name: "hardlinked.txt", Linkname: "original.txt"}},
+	})
+
+	// Act
+	if err := extractTar(buf, dest); err != nil {
+		t.Fatalf("extractTar: %v", err)
+	}
+
+	// Assert — hardlinked.txt exists with correct content
+	got, err := os.ReadFile(filepath.Join(dest, "hardlinked.txt"))
+	if err != nil {
+		t.Fatalf("read hardlinked.txt: %v", err)
+	}
+	if !bytes.Equal(got, origBody) {
+		t.Errorf("hardlinked.txt = %q, want %q", got, origBody)
+	}
+
+	// Assert — same inode
+	fi1, err := os.Stat(filepath.Join(dest, "original.txt"))
+	if err != nil {
+		t.Fatalf("stat original.txt: %v", err)
+	}
+	fi2, err := os.Stat(filepath.Join(dest, "hardlinked.txt"))
+	if err != nil {
+		t.Fatalf("stat hardlinked.txt: %v", err)
+	}
+	if !os.SameFile(fi1, fi2) {
+		t.Errorf("expected original.txt and hardlinked.txt to share an inode")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ComputeDigest
+// ---------------------------------------------------------------------------
+
 func TestComputeDigest_Deterministic(t *testing.T) {
 	data := []byte("thrive container runtime")
 	d1 := ComputeDigest(data)
@@ -158,6 +301,39 @@ func TestComputeDigest_DifferentInput(t *testing.T) {
 		t.Fatal("different inputs must produce different digests")
 	}
 }
+
+func TestComputeDigest_EmptyInput(t *testing.T) {
+	// SHA-256 of an empty byte slice is a well-known constant.
+	data := []byte{}
+	got := ComputeDigest(data)
+	want := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	if got != want {
+		t.Errorf("ComputeDigest([]) = %q, want %q", got, want)
+	}
+}
+
+func TestComputeDigest_IsHexString(t *testing.T) {
+	// Arrange
+	data := []byte("hex string check")
+
+	// Act
+	got := ComputeDigest(data)
+
+	// Assert — SHA-256 hex = 64 lowercase hex chars
+	if len(got) != 64 {
+		t.Errorf("ComputeDigest length = %d, want 64", len(got))
+	}
+	for _, c := range got {
+		if !('0' <= c && c <= '9') && !('a' <= c && c <= 'f') {
+			t.Errorf("non-hex char %q in digest %q", c, got)
+			break
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ChunkStore
+// ---------------------------------------------------------------------------
 
 func TestChunkStore_PutGetHas(t *testing.T) {
 	base := t.TempDir()
@@ -196,6 +372,97 @@ func TestChunkStore_GetMissingReturnsError(t *testing.T) {
 		t.Fatal("Get of missing chunk should return error")
 	}
 }
+
+func TestChunkStore_Has_FalseBeforePut(t *testing.T) {
+	// Arrange
+	cs := NewChunkStore(t.TempDir())
+	ctx := context.Background()
+	digest := ComputeDigest([]byte("has-before-put"))
+
+	// Act + Assert
+	if cs.Has(ctx, digest) {
+		t.Errorf("Has() = true before any Put, want false")
+	}
+}
+
+func TestChunkStore_Has_TrueAfterPut(t *testing.T) {
+	// Arrange
+	cs := NewChunkStore(t.TempDir())
+	ctx := context.Background()
+	data := []byte("has-after-put payload")
+	digest := ComputeDigest(data)
+
+	// Act
+	if err := cs.Put(ctx, digest, data); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	// Assert
+	if !cs.Has(ctx, digest) {
+		t.Errorf("Has() = false after Put, want true")
+	}
+}
+
+func TestChunkStore_PutGet_EmptyData(t *testing.T) {
+	// Arrange — zero-byte blob
+	cs := NewChunkStore(t.TempDir())
+	ctx := context.Background()
+	data := []byte{}
+	digest := ComputeDigest(data)
+
+	// Act
+	if err := cs.Put(ctx, digest, data); err != nil {
+		t.Fatalf("Put empty data: %v", err)
+	}
+	got, err := cs.Get(ctx, digest)
+
+	// Assert
+	if err != nil {
+		t.Fatalf("Get empty data: %v", err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Errorf("Get() = %q, want empty slice", got)
+	}
+}
+
+func TestChunkStore_MultipleBlobs_IndependentPaths(t *testing.T) {
+	// Arrange — two distinct digests must not collide in storage.
+	cs := NewChunkStore(t.TempDir())
+	ctx := context.Background()
+
+	dataA := []byte("blob payload A")
+	dataB := []byte("blob payload B")
+	digestA := ComputeDigest(dataA)
+	digestB := ComputeDigest(dataB)
+
+	// Act
+	if err := cs.Put(ctx, digestA, dataA); err != nil {
+		t.Fatalf("Put A: %v", err)
+	}
+	if err := cs.Put(ctx, digestB, dataB); err != nil {
+		t.Fatalf("Put B: %v", err)
+	}
+	gotA, err := cs.Get(ctx, digestA)
+	if err != nil {
+		t.Fatalf("Get A: %v", err)
+	}
+	gotB, err := cs.Get(ctx, digestB)
+	if err != nil {
+		t.Fatalf("Get B: %v", err)
+	}
+
+	// Assert
+	if !bytes.Equal(gotA, dataA) {
+		t.Errorf("Get A = %q, want %q", gotA, dataA)
+	}
+	if !bytes.Equal(gotB, dataB) {
+		t.Errorf("Get B = %q, want %q", gotB, dataB)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// List
+// ---------------------------------------------------------------------------
 
 func TestList_EmptyDirReturnsNil(t *testing.T) {
 	// /var/lib/thrive/images doesn't exist in test env — List must return nil, nil.
@@ -241,6 +508,10 @@ func TestList_ReadsManifests(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// Mount / Unmount / Remove
+// ---------------------------------------------------------------------------
+
 func TestMount_NonexistentImageReturnsError(t *testing.T) {
 	// Mount reads /var/lib/thrive/images/{ref}/manifest.json — must fail
 	// gracefully with an error (not a panic) when the image doesn't exist.
@@ -262,5 +533,157 @@ func TestRemove_NonexistentPathReturnsNil(t *testing.T) {
 	err := Remove(context.Background(), filepath.Join(t.TempDir(), "nonexistent"))
 	if err != nil {
 		t.Fatalf("Remove of nonexistent path: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SafeRef — defined in types.go (no build tag), exercised here.
+// ---------------------------------------------------------------------------
+
+func TestSafeRef_Colon(t *testing.T) {
+	// Arrange
+	input := "nginx:latest"
+
+	// Act
+	got := SafeRef(input)
+
+	// Assert
+	want := "nginx_latest"
+	if got != want {
+		t.Errorf("SafeRef(%q) = %q, want %q", input, got, want)
+	}
+}
+
+func TestSafeRef_SlashesAndColon(t *testing.T) {
+	// Arrange
+	input := "registry.io/foo/bar:v1"
+
+	// Act
+	got := SafeRef(input)
+
+	// Assert
+	want := "registry.io_foo_bar_v1"
+	if got != want {
+		t.Errorf("SafeRef(%q) = %q, want %q", input, got, want)
+	}
+}
+
+func TestSafeRef_AtSign(t *testing.T) {
+	// Arrange
+	input := "registry.io/repo@sha256:abc"
+
+	// Act
+	got := SafeRef(input)
+
+	// Assert
+	want := "registry.io_repo_sha256_abc"
+	if got != want {
+		t.Errorf("SafeRef(%q) = %q, want %q", input, got, want)
+	}
+}
+
+func TestSafeRef_PlainName(t *testing.T) {
+	// Arrange — no special characters
+	input := "ubuntu"
+
+	// Act
+	got := SafeRef(input)
+
+	// Assert — unchanged
+	if got != input {
+		t.Errorf("SafeRef(%q) = %q, want %q (no-op)", input, got, input)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// copyDir
+// ---------------------------------------------------------------------------
+
+func TestCopyDir_BasicFiles(t *testing.T) {
+	// Arrange
+	srcDir := t.TempDir()
+	dstDir := t.TempDir()
+
+	fileContent := []byte("root file content")
+	nestedContent := []byte("nested file content")
+
+	if err := os.WriteFile(filepath.Join(srcDir, "root.txt"), fileContent, 0644); err != nil {
+		t.Fatalf("write root.txt: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(srcDir, "subdir"), 0755); err != nil {
+		t.Fatalf("mkdir subdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "subdir", "nested.txt"), nestedContent, 0644); err != nil {
+		t.Fatalf("write nested.txt: %v", err)
+	}
+
+	// Act
+	if err := copyDir(srcDir, dstDir); err != nil {
+		t.Fatalf("copyDir: %v", err)
+	}
+
+	// Assert — root.txt replicated
+	gotRoot, err := os.ReadFile(filepath.Join(dstDir, "root.txt"))
+	if err != nil {
+		t.Fatalf("read dst root.txt: %v", err)
+	}
+	if !bytes.Equal(gotRoot, fileContent) {
+		t.Errorf("root.txt = %q, want %q", gotRoot, fileContent)
+	}
+
+	// Assert — subdir/nested.txt replicated
+	gotNested, err := os.ReadFile(filepath.Join(dstDir, "subdir", "nested.txt"))
+	if err != nil {
+		t.Fatalf("read dst nested.txt: %v", err)
+	}
+	if !bytes.Equal(gotNested, nestedContent) {
+		t.Errorf("nested.txt = %q, want %q", gotNested, nestedContent)
+	}
+}
+
+func TestCopyDir_SymlinksPreserved(t *testing.T) {
+	// Arrange
+	srcDir := t.TempDir()
+	dstDir := t.TempDir()
+
+	if err := os.WriteFile(filepath.Join(srcDir, "target.txt"), []byte("target"), 0644); err != nil {
+		t.Fatalf("write target.txt: %v", err)
+	}
+	if err := os.Symlink("target.txt", filepath.Join(srcDir, "link.txt")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	// Act
+	if err := copyDir(srcDir, dstDir); err != nil {
+		t.Fatalf("copyDir: %v", err)
+	}
+
+	// Assert — symlink preserved (not followed)
+	linkTarget, err := os.Readlink(filepath.Join(dstDir, "link.txt"))
+	if err != nil {
+		t.Fatalf("Readlink: %v", err)
+	}
+	if linkTarget != "target.txt" {
+		t.Errorf("link.txt target = %q, want %q", linkTarget, "target.txt")
+	}
+}
+
+func TestCopyDir_EmptySource(t *testing.T) {
+	// Arrange — source dir with no files
+	srcDir := t.TempDir()
+	dstDir := t.TempDir()
+
+	// Act
+	if err := copyDir(srcDir, dstDir); err != nil {
+		t.Fatalf("copyDir on empty source: %v", err)
+	}
+
+	// Assert — destination remains empty
+	entries, err := os.ReadDir(dstDir)
+	if err != nil {
+		t.Fatalf("ReadDir dst: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected empty dst, got %d entries", len(entries))
 	}
 }

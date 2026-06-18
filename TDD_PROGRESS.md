@@ -15,7 +15,7 @@
 | pkg/thrivefile | thrivefile_test.go | ~75% | stable | YAML parsing for all directives verified |
 | internal/lazypull | (pending) | 0% | missing | needs lazypull_test.go; FUSE fetch path not covered |
 | cmd/ | (pending) | 0% | missing | CLI integration tests not yet written |
-| internal/vm (desktop) | darwin_launcher_test.go, wsl2_launcher_test.go, hyperv_launcher_test.go, download_test.go | ~70% | stable | 14 tests cover all 6 launcher paths + local image override; subprocess contracts verified via injected mocks (2026-05-17) |
+| internal/vm (desktop) | darwin_launcher_test.go, wsl2_launcher_test.go, hyperv_launcher_test.go, download_test.go, vsock_darwin_test.go | ~80% | stable | 28 tests: launcher paths, download override, vsock bridge (PrepareVSOCKListener, CloseVSOCKListener, newVSOCKBridge, Exec success/error, ExecStream); all PASS (2026-05-17) |
 
 **Overall: ~35% — Target: 70%**
 

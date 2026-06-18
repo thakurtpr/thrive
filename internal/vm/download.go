@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	VMImageBaseURL = "https://github.com/thakurtpr/thrive/releases/latest"
+	VMImageBaseURL = "https://github.com/thakurtpr/thrive/releases/latest/download"
 )
 
 func DownloadVMImage(ctx context.Context) error {

@@ -15,7 +15,7 @@ Session goal: Implement all phases of THRIVE, reach clean build + test compilati
 | OTEL | internal/otel | COMPLETE | 2026-05-16 | OTLP gRPC exporter wired; Prometheus metrics active |
 | P2P | internal/p2p | COMPLETE | 2026-05-16 | RequestChunk 30s blocking timeout fixed |
 | LAZYPULL | internal/lazypull | COMPLETE | 2026-05-16 | HTTP fetch to OCI blob endpoint implemented |
-| DESKTOP | internal/vm (Phase 9) | COMPLETE | 2026-05-17 | All 6 lifecycle stubs replaced with real subprocess launchers (vfkit/wsl/PowerShell); 14 TDD tests; cross-compile matrix added; THRIVE_VM_IMAGE_PATH local-image override |
+| DESKTOP | internal/vm (Phase 9) | COMPLETE | 2026-05-17 | vsock timing fix: PrepareVSOCKListener before vfkit spawn; WaitForBoot retry-Dial loop (2min); 28 TDD tests including 7 vsock bridge tests; build tags darwin; all PASS |
 
 ---
 
