@@ -5,9 +5,12 @@
 
 GOOS ?= linux
 BINARY := bin/thrive
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+LDFLAGS  = -ldflags "-X main.Version=$(VERSION) -X main.Commit=$(COMMIT)"
 
 build:
-	GOOS=$(GOOS) go build -o $(BINARY) ./cmd/thrive
+	GOOS=$(GOOS) go build $(LDFLAGS) -o $(BINARY) ./cmd/thrive
 
 # Cross-compile the thrive CLI for every supported host platform.
 # Output: bin/thrive-<os>-<arch>[.exe]
@@ -16,17 +19,17 @@ build:
 build-all: build-linux build-darwin build-windows
 
 build-linux:
-	GOOS=linux  GOARCH=amd64 go build -o bin/thrive-linux-amd64 ./cmd/thrive
-	GOOS=linux  GOARCH=arm64 go build -o bin/thrive-linux-arm64 ./cmd/thrive
+	GOOS=linux  GOARCH=amd64 go build $(LDFLAGS) -o bin/thrive-linux-amd64 ./cmd/thrive
+	GOOS=linux  GOARCH=arm64 go build $(LDFLAGS) -o bin/thrive-linux-arm64 ./cmd/thrive
 	GOOS=linux  GOARCH=amd64 go build -o bin/thrived-linux-amd64 ./cmd/thrived
 	GOOS=linux  GOARCH=arm64 go build -o bin/thrived-linux-arm64 ./cmd/thrived
 
 build-darwin:
-	GOOS=darwin GOARCH=arm64 go build -o bin/thrive-darwin-arm64 ./cmd/thrive
+	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o bin/thrive-darwin-arm64 ./cmd/thrive
 
 build-windows:
-	GOOS=windows GOARCH=amd64 go build -o bin/thrive-windows-amd64.exe ./cmd/thrive
-	GOOS=windows GOARCH=arm64 go build -o bin/thrive-windows-arm64.exe ./cmd/thrive
+	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o bin/thrive-windows-amd64.exe ./cmd/thrive
+	GOOS=windows GOARCH=arm64 go build $(LDFLAGS) -o bin/thrive-windows-arm64.exe ./cmd/thrive
 
 # Desktop-subsystem-only test on the host platform (no GOOS override).
 test-desktop:
