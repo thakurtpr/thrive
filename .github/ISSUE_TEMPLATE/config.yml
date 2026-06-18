@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerabilities
+    url: https://github.com/thakurprasadrout/thrive/security/advisories
+    about: Report vulnerabilities privately
+  - name: Discussions
+    url: https://github.com/thakurprasadrout/thrive/discussions
+    about: Questions and general discussion
