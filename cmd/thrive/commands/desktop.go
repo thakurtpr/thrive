@@ -1,6 +1,6 @@
 // cmd/thrive/commands/desktop.go
 
-//go:build !linux
+//go:build darwin
 
 package commands
 

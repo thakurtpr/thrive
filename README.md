@@ -76,7 +76,7 @@ thrive run alpine:3.19 -- echo hello
 
 ## Building from Source
 
-Requires Go 1.22+.
+Requires Go 1.25+.
 
 ```bash
 make build          # CLI for current OS
@@ -117,7 +117,7 @@ curl -fsSL https://raw.githubusercontent.com/thakurprasadrout/thrive/main/script
 
 - Kernel 5.11+, cgroups v2
 - `/dev/fuse` for lazy-pull
-- Go 1.22+ to build from source
+- Go 1.25+ to build from source
 
 ## Community
 

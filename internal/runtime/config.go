@@ -17,18 +17,10 @@ type ContainerConfig struct {
 	Env           []string
 	Ports         []PortMapping
 	Mounts        []Mount
-	Ports         []PortMapping
 	NetworkMode   string
 	Secrets       []string
 	Resources     ResourceLimits
 	RestartPolicy RestartPolicy
-}
-
-// PortMapping maps a host port to a container port.
-type PortMapping struct {
-	HostPort      int
-	ContainerPort int
-	Protocol      string // "tcp" or "udp"
 }
 
 // Mount represents a container mount point.
