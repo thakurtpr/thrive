@@ -106,3 +106,66 @@ func TestTopologicalSortNoNodes(t *testing.T) {
 		t.Errorf("Expected 0 levels for empty graph, got %d", len(levels))
 	}
 }
+
+func TestDAGCycleDetection(t *testing.T) {
+	// A depends on B, B depends on A — creates a cycle
+	g := New([]string{"A", "B"}, map[string][]string{
+		"A": {"B"},
+		"B": {"A"},
+	})
+	if _, err := TopologicalSort(g); err == nil {
+		t.Fatal("expected cycle detection error, got nil")
+	}
+}
+
+func TestDAGTopologicalOrder_NamedSteps(t *testing.T) {
+	// build → test → package (linear chain with meaningful names)
+	g := New(
+		[]string{"build", "test", "package"},
+		map[string][]string{
+			"build":   {},
+			"test":    {"build"},
+			"package": {"test"},
+		},
+	)
+	levels, err := TopologicalSort(g)
+	if err != nil {
+		t.Fatalf("TopologicalSort: %v", err)
+	}
+	if len(levels) != 3 {
+		t.Fatalf("expected 3 levels, got %d: %v", len(levels), levels)
+	}
+	// flatten to ordered list
+	var order []string
+	for _, level := range levels {
+		order = append(order, level...)
+	}
+	if len(order) != 3 {
+		t.Fatalf("expected 3 nodes, got %d: %v", len(order), order)
+	}
+	indexOf := func(s string) int {
+		for i, n := range order {
+			if n == s {
+				return i
+			}
+		}
+		return -1
+	}
+	if indexOf("build") >= indexOf("test") {
+		t.Error("build must precede test in topological order")
+	}
+	if indexOf("test") >= indexOf("package") {
+		t.Error("test must precede package in topological order")
+	}
+}
+
+func TestDAGSingleNode(t *testing.T) {
+	g := New([]string{"only"}, map[string][]string{"only": {}})
+	levels, err := TopologicalSort(g)
+	if err != nil {
+		t.Fatalf("TopologicalSort: %v", err)
+	}
+	if len(levels) != 1 || len(levels[0]) != 1 || levels[0][0] != "only" {
+		t.Errorf("expected [[only]], got %v", levels)
+	}
+}

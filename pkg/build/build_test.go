@@ -100,3 +100,57 @@ steps:
 		t.Error("Steps: missing 'build' step")
 	}
 }
+
+// TestParseThrivefile_NotFound verifies that ParseThrivefile returns an error
+// for a non-existent file path.
+func TestParseThrivefile_NotFound(t *testing.T) {
+	_, err := ParseThrivefile("/nonexistent/path/Thrivefile")
+	if err == nil {
+		t.Fatal("ParseThrivefile: expected error for missing file, got nil")
+	}
+}
+
+// TestCacheKey_WithDependencyInput verifies that dependency inputs affect the
+// cache key, ensuring downstream steps get unique keys.
+func TestCacheKey_WithDependencyInput(t *testing.T) {
+	// Arrange
+	baseImage := "alpine:3.19"
+	step := &thrivefile.Step{
+		Name:      "test",
+		Run:       "go test ./...",
+		DependsOn: []string{"build"},
+	}
+	inputsWithDep := map[string]string{"build": "/cache/abc123"}
+	inputsNoDep := map[string]string{}
+
+	// Act
+	keyWithDep, err := CacheKey(step, baseImage, inputsWithDep)
+	if err != nil {
+		t.Fatalf("CacheKey (with dep): %v", err)
+	}
+	keyNoDep, err := CacheKey(step, baseImage, inputsNoDep)
+	if err != nil {
+		t.Fatalf("CacheKey (no dep): %v", err)
+	}
+
+	// Assert — keys differ because dependency input content differs
+	if keyWithDep == keyNoDep {
+		t.Error("CacheKey: expected different key when dependency input changes")
+	}
+}
+
+// TestCacheKey_NonEmpty verifies the cache key is a non-empty hex string.
+func TestCacheKey_NonEmpty(t *testing.T) {
+	step := &thrivefile.Step{Name: "install", Run: "apk add curl"}
+	key, err := CacheKey(step, "alpine:3.19", map[string]string{})
+	if err != nil {
+		t.Fatalf("CacheKey: %v", err)
+	}
+	if key == "" {
+		t.Error("CacheKey must not be empty")
+	}
+	// sha256 hex = 64 chars
+	if len(key) != 64 {
+		t.Errorf("CacheKey length: got %d, want 64", len(key))
+	}
+}
