@@ -1,0 +1,94 @@
+version: 2
+
+project_name: thrive
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: thrive-linux
+    binary: thrive
+    main: ./cmd/thrive
+    goos: [linux]
+    goarch: [amd64, arm64]
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+  - id: thrived-linux
+    binary: thrived
+    main: ./cmd/thrived
+    goos: [linux]
+    goarch: [amd64, arm64]
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+  - id: thrive-darwin
+    binary: thrive
+    main: ./cmd/thrive
+    goos: [darwin]
+    goarch: [arm64, amd64]
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+  - id: thrive-windows
+    binary: thrive
+    main: ./cmd/thrive
+    goos: [windows]
+    goarch: [amd64, arm64]
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: thakurtpr
+    name: thrive
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
+
+brews:
+  - name: thrive
+    homepage: "https://github.com/thakurtpr/thrive"
+    description: "Daemonless, rootless OCI-compliant container runtime"
+    license: "MIT"
+    repository:
+      owner: thakurtpr
+      name: homebrew-tap
+    install: |
+      bin.install "thrive"
+    test: |
+      system "#{bin}/thrive", "--help"

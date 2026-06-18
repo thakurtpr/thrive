@@ -7,8 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  build:
-    name: Build & Test
+  build-linux:
+    name: Build & Test (Linux)
     runs-on: ubuntu-latest
 
     steps:
@@ -26,8 +26,14 @@ jobs:
       - name: Verify go.sum
         run: go mod verify
 
-      - name: Build (linux)
-        run: GOOS=linux go build ./...
+      - name: Vet
+        run: GOOS=linux go vet ./...
+
+      - name: Build (linux/amd64)
+        run: GOOS=linux GOARCH=amd64 go build ./...
+
+      - name: Build (linux/arm64)
+        run: GOOS=linux GOARCH=arm64 go build ./...
 
       - name: Run tests
         run: GOOS=linux go test -v -count=1 ./...
@@ -46,6 +52,44 @@ jobs:
         with:
           files: coverage.txt
           fail_ci_if_error: false
+
+  build-darwin:
+    name: Build (macOS)
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build CLI (darwin/arm64)
+        run: GOOS=darwin GOARCH=arm64 go build ./cmd/thrive
+
+      - name: Run non-linux tests
+        run: go test -v -count=1 ./cmd/thrive/...
+
+  build-windows:
+    name: Build (Windows)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - name: Build CLI (windows/amd64)
+        run: GOOS=windows GOARCH=amd64 go build ./cmd/thrive
 
   lint:
     name: Lint

@@ -28,3 +28,20 @@ Thumbs.db
 /run/
 /var/lib/thrive/
 /var/log/thrive/
+
+# Compiled binaries (root-level build artifacts)
+/thrive
+/thrived
+/thrive.exe
+/thrived.exe
+
+# VM image artifacts
+thrive-vm-darwin-*.tar.gz
+thrive-vm-cmdline
+
+# Test binary artifacts
+lazypull.test
+image.test
+runtime.test
+secrets.test
+p2p.test

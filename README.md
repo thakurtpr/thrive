@@ -1,115 +1,125 @@
-# THRIVE — THakur Runtime Isolation Virtualization Engine
+# Thrive
 
-A daemonless, rootless, OCI-compliant container runtime in Go. Built as a ground-up reimplementation of core Docker/containerd concepts — without the daemon.
+[![CI](https://github.com/thakurtpr/thrive/actions/workflows/ci.yml/badge.svg)](https://github.com/thakurtpr/thrive/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/thakurtpr/thrive)](https://goreportcard.com/report/github.com/thakurtpr/thrive)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## Platform Support
+**THakur Runtime Isolation Virtualization Engine** — a daemonless, rootless, OCI-compliant container runtime written in Go.
 
-| Platform | Status | Notes |
-|----------|--------|-------|
-| **Linux** | Full | Native container runtime with all features |
-| **macOS** | CLI Only | Build/management CLI; run containers via Docker |
-| **Windows** | WSL2 | Use WSL2 for native runtime |
+Thrive reimplements core container runtime concepts from the ground up: image distribution, namespace isolation, resource limits, and networking — with no central daemon and a fully auditable codebase.
 
-## Quick Start
-
-### Linux (Ubuntu/Debian)
-
-```bash
-# Install
-curl -fsSL https://raw.githubusercontent.com/thakurprasadrout/thrive/main/scripts/install.sh | sh
-
-# Or from source
-git clone https://github.com/thakurprasadrout/thrive
-cd thrive && make install
-
-# Run a container
-thrive run alpine:3.19 -- echo hello
-```
-
-### macOS
-
-**Option 1: Use Docker (Recommended for containers)**
-```bash
-# Build the Docker image
-docker compose up -d
-
-# Use thrive via docker exec
-docker exec thrive-dev thrive run alpine:3.19 -- echo hello
-docker exec thrive-dev thrive ps
-docker exec thrive-dev thrive images
-```
-
-**Option 2: Build CLI from source (macOS)**
-```bash
-git clone https://github.com/thakurprasadrout/thrive
-cd thrive
-GOOS=linux go build -o bin/thrive ./cmd/thrive
-```
-
-Note: Container run commands require Linux; macOS builds are CLI-only.
+---
 
 ## Features
 
-| Feature | Linux | macOS (Docker) |
-|---------|-------|----------------|
-| thrive run | Native | Via Docker |
-| thrive ps | Yes | Yes |
-| thrive images | Yes | Yes |
-| thrive pull/push | Yes | Yes |
-| thrive build | Yes | Yes |
-| thrive logs | Yes | Yes |
-| thrive secret | Yes | Yes |
-| Network isolation | Yes | Yes |
-| P2P distribution | Yes | Yes |
+| Capability | Status |
+|-----------|--------|
+| OCI image pull / push / build | Complete |
+| Namespace isolation (PID, mount, UTS, IPC, net) | Complete |
+| cgroups v2 resource limits | Complete |
+| Rootless (user namespaces) | Complete |
+| Lazy-pull via FUSE chunk store | Complete |
+| P2P image distribution (DHT) | Complete |
+| AES-256-GCM secret store | Complete |
+| Ed25519 image signing | Complete |
+| CNI network + port forwarding | Complete |
+| OpenTelemetry observability | Complete |
+| Systemd socket activation | Complete |
+| macOS VM desktop (vfkit) | Complete |
 
-## Installation Methods
+## Architecture
 
-### Shell Installer (Linux)
-```bash
-curl -fsSL https://raw.githubusercontent.com/thakurprasadrout/thrive/main/scripts/install.sh | sh
+```
+thrive CLI (cross-platform)
+cmd/thrive  ──proxy──▶  cmd/thrived (Linux daemon)
+                              │
+                    ┌─────────▼─────────┐
+                    │     thrived        │
+                    │  runtime + ns      │
+                    │  network + CNI     │
+                    │  cgroup v2         │
+                    │  OCI image store   │
+                    │  FUSE lazy-pull    │
+                    │  DHT p2p           │
+                    │  AES-GCM secrets   │
+                    │  Ed25519 signing   │
+                    └────────────────────┘
 ```
 
-### Debian Package
+## Quick Start
+
+### Linux
+
 ```bash
-git clone https://github.com/thakurprasadrout/thrive
-cd thrive && make deb
-sudo dpkg -i ../thrive_*.deb
+git clone https://github.com/thakurtpr/thrive
+cd thrive && make install
+
+thrive run alpine:3.19 -- echo hello
+thrive ps
+thrive images
 ```
 
-### Docker
+### macOS (Desktop VM via vfkit)
+
 ```bash
-git clone https://github.com/thakurprasadrout/thrive
-cd thrive && docker compose up -d
+git clone https://github.com/thakurtpr/thrive
+cd thrive
+GOOS=darwin go build -o bin/thrive ./cmd/thrive
+
+thrive desktop init
+thrive desktop start
+thrive run alpine:3.19 -- echo hello
 ```
 
-## Why THRIVE
+## Building from Source
 
-| Problem with Docker | THRIVE answer |
-|---|---|
-| Requires root daemon | Daemonless — every container is a direct child process |
-| Needs sudo or docker group | Rootless — user namespaces by default |
-| Monolithic daemon is a SPOF | No daemon to crash or hang |
-| Sequential layer downloads | Lazy pulling via FUSE |
-| Per-image layer duplication | Content-addressed SHA-256 chunk store |
-| Sequential Dockerfile builds | Parallel DAG build engine |
+Requires Go 1.22+.
+
+```bash
+make build          # CLI for current OS
+make build-linux    # linux/amd64 + linux/arm64
+make build-darwin   # darwin/arm64 CLI
+make test           # full test suite
+make test-cover     # with coverage report
+make lint           # golangci-lint
+```
+
+## Installation
+
+### Debian/Ubuntu
+
+```bash
+sudo make install-systemd
+sudo systemctl enable --now thrive.socket
+```
+
+### Shell Installer
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/thakurtpr/thrive/main/scripts/install.sh | sh
+```
+
+## Documentation
+
+- [Architecture](ARCHITECTURE.md)
+- [Roadmap](ROADMAP.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security Policy](SECURITY.md)
+- [Governance](GOVERNANCE.md)
 
 ## Linux Requirements
 
-- Linux kernel 5.11+
-- cgroups v2 (Ubuntu 21.10+, Fedora 31+)
-- /dev/fuse access
-- Go 1.25+
+- Kernel 5.11+, cgroups v2
+- `/dev/fuse` for lazy-pull
+- Go 1.22+ to build from source
 
-## Development
+## Community
 
-```bash
-make build        # Build for Linux
-make test         # Run tests
-make test-cover   # Coverage report
-make lint         # Lint
-make install      # Install to /usr/local/bin
-```
+- Issues: [GitHub Issues](https://github.com/thakurtpr/thrive/issues)
+- Discussions: [GitHub Discussions](https://github.com/thakurtpr/thrive/discussions)
+- Code of Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
 ## License
 
-MIT
+[MIT](LICENSE)
