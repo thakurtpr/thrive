@@ -27,30 +27,6 @@ import (
 	"github.com/thakurprasadrout/thrive/internal/telemetry"
 )
 
-type Image struct {
-	Ref    string
-	Digest string
-	Layers []Layer
-}
-
-type Layer struct {
-	Digest string
-	Size   int64
-	Path   string
-}
-
-type PullOptions struct {
-	Username  string
-	Password  string
-	PlainHTTP bool
-}
-
-type PushOptions struct {
-	Username  string
-	Password  string
-	PlainHTTP bool
-}
-
 // Push pushes a locally stored image to a remote registry by re-taring
 // the extracted layer directories and uploading them via go-containerregistry.
 func Push(ctx context.Context, ref string, opts PushOptions) error {

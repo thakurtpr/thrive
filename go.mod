@@ -1,8 +1,9 @@
 module github.com/thakurprasadrout/thrive
 
-go 1.25.0
+go 1.22.0
 
 require (
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/getlantern/systray v1.2.2
 	github.com/google/go-containerregistry v0.21.5
 	github.com/google/uuid v1.6.0
@@ -19,7 +20,6 @@ require (
 )
 
 require (
-	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
