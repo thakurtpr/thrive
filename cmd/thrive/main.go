@@ -10,11 +10,18 @@ import (
 	"github.com/thakurprasadrout/thrive/cmd/thrive/commands"
 )
 
+var (
+	Version = "dev"
+	Commit  = "unknown"
+)
+
 func main() {
 	root := &cobra.Command{
 		Use:   "thrive",
 		Short: "THRIVE — THakur Runtime Isolation Virtualization Engine",
 	}
+	root.Version = Version + " (" + Commit + ")"
+	root.SetVersionTemplate("thrive {{.Version}}\n")
 	root.AddCommand(
 		commands.RunCmd(),
 		commands.ExecCmd(),

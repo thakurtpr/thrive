@@ -2,12 +2,20 @@ package runtime
 
 import "time"
 
+// PortMapping maps a host port to a container port.
+type PortMapping struct {
+	HostPort      int
+	ContainerPort int
+	Protocol      string
+}
+
 // ContainerConfig holds configuration for creating a container.
 type ContainerConfig struct {
 	ID            string
 	Image         string
 	Command       []string
 	Env           []string
+	Ports         []PortMapping
 	Mounts        []Mount
 	Ports         []PortMapping
 	NetworkMode   string

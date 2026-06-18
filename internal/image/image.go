@@ -27,7 +27,6 @@ import (
 	"github.com/thakurprasadrout/thrive/internal/telemetry"
 )
 
-// Image, Layer, PullOptions, PushOptions are defined in types.go
 
 // Push pushes a locally stored image to a remote registry by re-taring
 // the extracted layer directories and uploading them via go-containerregistry.
