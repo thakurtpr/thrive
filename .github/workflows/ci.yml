@@ -104,7 +104,14 @@ jobs:
           go-version: "1.25"
           cache: true
 
+      - name: go vet
+        run: GOOS=linux go vet ./...
+
       - name: golangci-lint
+        # golangci-lint stable releases are built with Go 1.24 and will not run
+        # against a go.mod that requires Go 1.25 (pre-release). Enable once
+        # golangci-lint ships a release built with Go ≥ 1.25.
+        continue-on-error: true
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
