@@ -15,7 +15,7 @@ builds:
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+      - -s -w -X main.Version={{.Version}} -X main.Commit={{.ShortCommit}}
 
   - id: thrived-linux
     binary: thrived
@@ -24,8 +24,6 @@ builds:
     goarch: [amd64, arm64]
     env:
       - CGO_ENABLED=0
-    ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
 
   - id: thrive-darwin
     binary: thrive
@@ -35,7 +33,7 @@ builds:
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+      - -s -w -X main.Version={{.Version}} -X main.Commit={{.ShortCommit}}
 
   - id: thrive-windows
     binary: thrive
@@ -45,7 +43,7 @@ builds:
     env:
       - CGO_ENABLED=0
     ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
+      - -s -w -X main.Version={{.Version}} -X main.Commit={{.ShortCommit}}
 
 archives:
   - id: default
@@ -79,16 +77,3 @@ release:
   draft: false
   prerelease: auto
   name_template: "v{{.Version}}"
-
-brews:
-  - name: thrive
-    homepage: "https://github.com/thakurtpr/thrive"
-    description: "Daemonless, rootless OCI-compliant container runtime"
-    license: "MIT"
-    repository:
-      owner: thakurtpr
-      name: homebrew-tap
-    install: |
-      bin.install "thrive"
-    test: |
-      system "#{bin}/thrive", "--help"

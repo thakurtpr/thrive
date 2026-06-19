@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -e
 
-REPO="thakurprasadrout/thrive"
+REPO="thakurtpr/thrive"
 VERSION="${THRIVE_VERSION:-}"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 
@@ -27,20 +27,25 @@ if [ -z "$VERSION" ]; then
     fi
 fi
 
-BINARY="thrive-${OS}-${ARCH}"
-URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY}"
+# goreleaser archives: thrive_VERSION_OS_ARCH.tar.gz (strip leading 'v' from tag)
+VER="${VERSION#v}"
+ARCHIVE="thrive_${VER}_${OS}_${ARCH}.tar.gz"
+URL="https://github.com/${REPO}/releases/download/${VERSION}/${ARCHIVE}"
 
 echo "Installing thrive ${VERSION} (${OS}/${ARCH})..."
 
-TMP=$(mktemp)
-curl -fsSL -o "$TMP" "$URL"
-chmod +x "$TMP"
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
+curl -fsSL -o "${TMP}/${ARCHIVE}" "$URL"
+tar -xzf "${TMP}/${ARCHIVE}" -C "$TMP" thrive
 
 if [ "$(id -u)" -ne 0 ] && [ ! -w "$INSTALL_DIR" ]; then
-    sudo mv "$TMP" "${INSTALL_DIR}/thrive"
+    sudo mv "${TMP}/thrive" "${INSTALL_DIR}/thrive"
 else
-    mv "$TMP" "${INSTALL_DIR}/thrive"
+    mv "${TMP}/thrive" "${INSTALL_DIR}/thrive"
 fi
 
+chmod +x "${INSTALL_DIR}/thrive"
 echo "thrive installed to ${INSTALL_DIR}/thrive"
 "${INSTALL_DIR}/thrive" --version

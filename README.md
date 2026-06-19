@@ -1,8 +1,8 @@
 # Thrive
 
-[![CI](https://github.com/thakurprasadrout/thrive/actions/workflows/ci.yml/badge.svg)](https://github.com/thakurprasadrout/thrive/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/thakurprasadrout/thrive)](https://goreportcard.com/report/github.com/thakurprasadrout/thrive)
-[![codecov](https://codecov.io/gh/thakurprasadrout/thrive/branch/main/graph/badge.svg)](https://codecov.io/gh/thakurprasadrout/thrive)
+[![CI](https://github.com/thakurtpr/thrive/actions/workflows/ci.yml/badge.svg)](https://github.com/thakurtpr/thrive/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/thakurtpr/thrive)](https://goreportcard.com/report/github.com/thakurtpr/thrive)
+[![codecov](https://codecov.io/gh/thakurtpr/thrive/branch/main/graph/badge.svg)](https://codecov.io/gh/thakurtpr/thrive)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![CNCF Sandbox](https://img.shields.io/badge/CNCF-Sandbox-blue.svg)](docs/cncf-due-diligence.md)
 
@@ -53,7 +53,7 @@ cmd/thrive  ──proxy──▶  cmd/thrived (Linux daemon)
 ### Linux
 
 ```bash
-git clone https://github.com/thakurprasadrout/thrive
+git clone https://github.com/thakurtpr/thrive
 cd thrive && make install
 thrive --version
 
@@ -65,7 +65,7 @@ thrive images
 ### macOS (Desktop VM via vfkit)
 
 ```bash
-git clone https://github.com/thakurprasadrout/thrive
+git clone https://github.com/thakurtpr/thrive
 cd thrive
 GOOS=darwin go build -o bin/thrive ./cmd/thrive
 
@@ -99,7 +99,7 @@ sudo systemctl enable --now thrive.socket
 ### Shell Installer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/thakurprasadrout/thrive/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/thakurtpr/thrive/main/scripts/install.sh | sh
 ```
 
 ## Documentation
@@ -121,8 +121,8 @@ curl -fsSL https://raw.githubusercontent.com/thakurprasadrout/thrive/main/script
 
 ## Community
 
-- Issues: [GitHub Issues](https://github.com/thakurprasadrout/thrive/issues)
-- Discussions: [GitHub Discussions](https://github.com/thakurprasadrout/thrive/discussions)
+- Issues: [GitHub Issues](https://github.com/thakurtpr/thrive/issues)
+- Discussions: [GitHub Discussions](https://github.com/thakurtpr/thrive/discussions)
 - Code of Conduct: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
 ## License

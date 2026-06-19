@@ -1,11 +1,11 @@
 # Submit as a PR to https://github.com/cncf/landscape to list Thrive
 item:
   name: Thrive
-  homepage_url: https://github.com/thakurprasadrout/thrive
+  homepage_url: https://github.com/thakurtpr/thrive
   description: >
     Daemonless, rootless OCI container runtime with lazy FUSE pulling,
     P2P Kademlia DHT image distribution, AES-256-GCM secrets, and Ed25519 signing.
-  repo_url: https://github.com/thakurprasadrout/thrive
+  repo_url: https://github.com/thakurtpr/thrive
   project: sandbox
   category: Runtime
   subcategory: Container Runtime

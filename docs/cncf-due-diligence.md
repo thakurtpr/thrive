@@ -5,7 +5,7 @@
 ## Summary
 
 **Project name:** Thrive (THakur Runtime Isolation Virtualization Engine)
-**Repo:** https://github.com/thakurprasadrout/thrive
+**Repo:** https://github.com/thakurtpr/thrive
 **License:** MIT
 **Maturity:** Sandbox (requested)
 **Contact:** thakurprasadrout72@gmail.com
