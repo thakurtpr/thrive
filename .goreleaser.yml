@@ -46,15 +46,23 @@ builds:
       - -s -w -X main.Version={{.Version}} -X main.Commit={{.ShortCommit}}
 
 archives:
-  - id: default
-    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - id: thrive
+    ids: [thrive-linux, thrive-darwin, thrive-windows]
+    name_template: "thrive_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
     files:
       - README.md
       - LICENSE
       - CHANGELOG.md
+
+  - id: thrived
+    ids: [thrived-linux]
+    name_template: "thrived_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
 
 checksum:
   name_template: "checksums.txt"
