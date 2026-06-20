@@ -16,7 +16,7 @@ import (
 )
 
 func ExecCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "exec [container] [command...]",
 		Short: "Execute a command in a running container",
 		Args:  cobra.MinimumNArgs(2),
@@ -58,4 +58,8 @@ func ExecCmd() *cobra.Command {
 			}
 		},
 	}
+	// Stop flag parsing after the container name so command flags (e.g. uname -a)
+	// are not mistaken for thrive exec flags.
+	cmd.Flags().SetInterspersed(false)
+	return cmd
 }

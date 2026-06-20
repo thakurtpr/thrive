@@ -5,10 +5,14 @@ package commands
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sys/unix"
 
 	"github.com/thakurprasadrout/thrive/internal/image"
 	"github.com/thakurprasadrout/thrive/internal/runtime"
@@ -23,6 +27,8 @@ func RunCmd() *cobra.Command {
 	var portSpecs []string
 	var volumeSpecs []string
 	var netMode string
+	var tty bool
+	var interactive bool
 
 	cmd := &cobra.Command{
 		Use:   "run [image] [command...]",
@@ -60,6 +66,8 @@ func RunCmd() *cobra.Command {
 				Ports:       ports,
 				Mounts:      parseVolumeSpecs(volumeSpecs),
 				NetworkMode: netMode,
+				TTY:         tty,
+				Interactive: interactive || tty, // -t implies -i
 			}
 
 			container, err := runtime.Create(ctx, cfg)
@@ -68,7 +76,8 @@ func RunCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			if err := runtime.Start(ctx, container.ID); err != nil {
+			ptm, err := runtime.Start(ctx, container.ID)
+			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error starting container: %v\n", err)
 				os.Exit(1)
 			}
@@ -76,22 +85,62 @@ func RunCmd() *cobra.Command {
 			fmt.Println(container.ID)
 
 			if detach {
+				if ptm != nil {
+					ptm.Close()
+				}
 				return
 			}
 
+			// Interactive TTY: relay I/O between the caller's terminal and the PTY master.
+			if tty && ptm != nil {
+				defer ptm.Close()
+
+				// Raw mode so every keystroke goes straight to the container.
+				oldTermios, rawErr := makeTermRaw(int(os.Stdin.Fd()))
+				if rawErr == nil {
+					defer restoreTermios(int(os.Stdin.Fd()), oldTermios)
+				}
+
+				// Forward window-resize signals into the PTY.
+				sigwinch := make(chan os.Signal, 1)
+				signal.Notify(sigwinch, syscall.SIGWINCH)
+				go func() {
+					for range sigwinch {
+						if ws, wsErr := unix.IoctlGetWinsize(int(os.Stdin.Fd()), unix.TIOCGWINSZ); wsErr == nil {
+							unix.IoctlSetWinsize(int(ptm.Fd()), unix.TIOCSWINSZ, ws) //nolint:errcheck
+						}
+					}
+				}()
+
+				go io.Copy(ptm, os.Stdin) //nolint:errcheck
+				io.Copy(os.Stdout, ptm)   //nolint:errcheck
+
+				signal.Stop(sigwinch)
+				close(sigwinch)
+
+				state, _ := runtime.State(ctx, container.ID)
+				if rm {
+					runtime.Delete(ctx, container.ID) //nolint:errcheck
+				}
+				if state != nil {
+					os.Exit(state.ExitCode)
+				}
+				return
+			}
+
+			// Non-TTY foreground: poll until stopped, then stream logs.
 			for {
 				state, err := runtime.State(ctx, container.ID)
 				if err != nil {
 					break
 				}
 				if state.Status == "stopped" {
-					// Stream container logs to stdout before cleanup.
 					logPath := "/run/thrive/containers/" + container.ID + "/logs"
 					if logData, readErr := os.ReadFile(logPath); readErr == nil {
 						os.Stdout.Write(logData)
 					}
 					if rm {
-						runtime.Delete(ctx, container.ID)
+						runtime.Delete(ctx, container.ID) //nolint:errcheck
 					}
 					os.Exit(state.ExitCode)
 				}
@@ -108,9 +157,36 @@ func RunCmd() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&portSpecs, "publish", "p", nil, "Publish port(s): host:container[/proto]")
 	cmd.Flags().StringArrayVarP(&volumeSpecs, "volume", "v", nil, "Bind mount: /host:/container")
 	cmd.Flags().StringVar(&netMode, "network", "", "Network mode (host, none, or default bridge)")
+	cmd.Flags().BoolVarP(&tty, "tty", "t", false, "Allocate a pseudo-TTY")
+	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Keep stdin open")
 	// Stop flag parsing after the image name so container commands can include flags.
 	cmd.Flags().SetInterspersed(false)
 	return cmd
+}
+
+// makeTermRaw puts fd into raw terminal mode and returns the previous state.
+func makeTermRaw(fd int) (*unix.Termios, error) {
+	t, err := unix.IoctlGetTermios(fd, unix.TCGETS)
+	if err != nil {
+		return nil, err
+	}
+	raw := *t
+	raw.Iflag &^= unix.IGNBRK | unix.BRKINT | unix.PARMRK | unix.ISTRIP |
+		unix.INLCR | unix.IGNCR | unix.ICRNL | unix.IXON
+	raw.Oflag &^= unix.OPOST
+	raw.Lflag &^= unix.ECHO | unix.ECHONL | unix.ICANON | unix.ISIG | unix.IEXTEN
+	raw.Cflag &^= unix.CSIZE | unix.PARENB
+	raw.Cflag |= unix.CS8
+	raw.Cc[unix.VMIN] = 1
+	raw.Cc[unix.VTIME] = 0
+	if err := unix.IoctlSetTermios(fd, unix.TCSETSF, &raw); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+func restoreTermios(fd int, state *unix.Termios) {
+	unix.IoctlSetTermios(fd, unix.TCSETSF, state) //nolint:errcheck
 }
 
 func parsePortSpecs(specs []string) ([]runtime.PortMapping, error) {

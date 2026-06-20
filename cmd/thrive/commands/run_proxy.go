@@ -20,8 +20,10 @@ func RunCmd() *cobra.Command {
 			ctx := cmd.Context()
 
 			opts := map[string]any{
-				"detach": cmd.Flag("detach").Value.String() == "true",
-				"rm":     cmd.Flag("rm").Value.String() == "true",
+				"detach":      cmd.Flag("detach").Value.String() == "true",
+				"rm":          cmd.Flag("rm").Value.String() == "true",
+				"tty":         cmd.Flag("tty").Value.String() == "true",
+				"interactive": cmd.Flag("interactive").Value.String() == "true",
 			}
 
 			if name := cmd.Flag("name").Value.String(); name != "" {
@@ -72,6 +74,8 @@ func RunCmd() *cobra.Command {
 	run.Flags().StringArrayP("publish", "p", nil, "Publish port(s): host:container[/proto]")
 	run.Flags().StringArrayP("volume", "v", nil, "Bind mount: /host:/container")
 	run.Flags().String("network", "", "Network mode")
+	run.Flags().BoolP("tty", "t", false, "Allocate a pseudo-TTY")
+	run.Flags().BoolP("interactive", "i", false, "Keep stdin open")
 
 	return run
 }

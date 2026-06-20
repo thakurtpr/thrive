@@ -21,6 +21,8 @@ type ContainerConfig struct {
 	Secrets       []string
 	Resources     ResourceLimits
 	RestartPolicy RestartPolicy
+	TTY           bool // allocate a pseudo-terminal for interactive sessions
+	Interactive   bool // keep stdin connected without a PTY
 }
 
 // Mount represents a container mount point.

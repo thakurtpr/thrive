@@ -165,7 +165,7 @@ func startService(ctx context.Context, projectName, name string, svc *ServiceDef
 	if _, err := runtime.Create(ctx, cfg); err != nil {
 		return fmt.Errorf("create: %w", err)
 	}
-	if err := runtime.Start(ctx, id); err != nil {
+	if _, err := runtime.Start(ctx, id); err != nil {
 		return fmt.Errorf("start: %w", err)
 	}
 	return nil

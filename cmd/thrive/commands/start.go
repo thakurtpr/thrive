@@ -44,7 +44,7 @@ func StartCmd() *cobra.Command {
 			data, _ := json.Marshal(state)
 			os.WriteFile(filepath.Join(containerDir, "state.json"), data, 0644)
 
-			if err := runtime.Start(ctx, id); err != nil {
+			if _, err := runtime.Start(ctx, id); err != nil {
 				fmt.Fprintf(os.Stderr, "Error starting container: %v\n", err)
 				os.Exit(1)
 			}

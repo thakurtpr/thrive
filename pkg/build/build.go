@@ -87,7 +87,7 @@ func Execute(ctx context.Context, graph *thrivefile.BuildGraph, opts BuildOption
 				if _, err := runtime.Create(egCtx, cfg); err != nil {
 					return fmt.Errorf("build.Execute: Create %s: %w", stepName, err)
 				}
-				if err := runtime.Start(egCtx, containerID); err != nil {
+				if _, err := runtime.Start(egCtx, containerID); err != nil {
 					runtime.Delete(egCtx, containerID)
 					return fmt.Errorf("build.Execute: Start %s: %w", stepName, err)
 				}

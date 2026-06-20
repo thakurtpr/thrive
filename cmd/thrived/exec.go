@@ -392,12 +392,12 @@ func handleRun(ctx context.Context, req *Request, w io.Writer) {
 	detach, _ := req.Opts["detach"].(bool)
 	if detach {
 		go func() {
-			if err := runtime.Start(ctx, cfg.ID); err != nil {
+			if _, err := runtime.Start(ctx, cfg.ID); err != nil {
 				log.Printf("thrived: container start error: %v", err)
 			}
 		}()
 	} else {
-		if err := runtime.Start(ctx, cfg.ID); err != nil {
+		if _, err := runtime.Start(ctx, cfg.ID); err != nil {
 			sendError(w, req.ID, 1, err.Error())
 			return
 		}
@@ -583,7 +583,7 @@ func handleStart(ctx context.Context, req *Request, w io.Writer) {
 	data, _ := json.Marshal(state)
 	os.WriteFile(filepath.Join(containerDir, "state.json"), data, 0644)
 
-	if err := runtime.Start(ctx, id); err != nil {
+	if _, err := runtime.Start(ctx, id); err != nil {
 		sendError(w, req.ID, 1, err.Error())
 		return
 	}

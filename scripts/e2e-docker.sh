@@ -213,6 +213,43 @@ test_system_clean() {
   fi
 }
 
+test_volume() {
+  log_info "--- test: volume bind mount (-v) ---"
+  out=$(exec_in '
+    mkdir -p /tmp/thrivetest-vol
+    echo "volume-content-ok" > /tmp/thrivetest-vol/test.txt
+    thrive run --rm -v /tmp/thrivetest-vol:/data ubuntu:22.04 cat /data/test.txt 2>&1
+    echo EXIT:$?
+  ')
+  if echo "$out" | grep -q "volume-content-ok" && echo "$out" | grep -q "EXIT:0"; then
+    log_ok "volume: bind mount (-v) works"
+  else
+    log_fail "volume: bind mount failed; output: $out"
+  fi
+}
+
+test_exec_flags() {
+  log_info "--- test: exec flag passthrough ---"
+  exec_in "thrive run --detach --name exec-flag-test ubuntu:22.04 sleep 30 2>&1" >/dev/null
+  out=$(exec_in "thrive exec exec-flag-test uname -a 2>&1")
+  exec_in "thrive kill exec-flag-test 2>&1; thrive rm exec-flag-test 2>&1" >/dev/null
+  if echo "$out" | grep -q "Linux"; then
+    log_ok "exec: flag passthrough (uname -a)"
+  else
+    log_fail "exec: flag passthrough failed; output: $out"
+  fi
+}
+
+test_interactive_stdin() {
+  log_info "--- test: interactive stdin (-i) ---"
+  out=$(exec_in "printf 'interactive-stdin-ok\n' | thrive run --rm -i ubuntu:22.04 cat 2>&1")
+  if echo "$out" | grep -q "interactive-stdin-ok"; then
+    log_ok "interactive: -i stdin pipe works"
+  else
+    log_fail "interactive: -i stdin pipe failed; output: $out"
+  fi
+}
+
 # ── Image matrix ───────────────────────────────────────────────────────────
 IMAGES=(
   "alpine:3.19"
@@ -249,6 +286,11 @@ test_run "golang:1.23-alpine" "go version"             "go1.23"
 test_lifecycle
 test_system_info
 test_system_clean
+
+# Bug-fix regression tests
+test_volume
+test_exec_flags
+test_interactive_stdin
 
 # ── Summary ───────────────────────────────────────────────────────────────
 echo ""

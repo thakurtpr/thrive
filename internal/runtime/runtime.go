@@ -12,6 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"unsafe"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/thakurprasadrout/thrive/internal/cgroup"
 	"github.com/thakurprasadrout/thrive/internal/image"
@@ -82,14 +85,16 @@ func Create(ctx context.Context, cfg ContainerConfig) (*Container, error) {
 }
 
 // Start executes the container's main process with namespace isolation.
-func Start(ctx context.Context, id string) error {
+// When cfg.TTY is set, Start allocates a pseudo-terminal and returns the master
+// side so the caller can relay I/O. Otherwise it returns nil, nil on success.
+func Start(ctx context.Context, id string) (*os.File, error) {
 	log := telemetry.Logger()
 	log.Info("runtime.Start: starting", telemetry.FieldString("containerID", id))
 
 	state, err := loadState(id)
 	if err != nil {
 		log.Error("runtime.Start: loadState failed", telemetry.FieldString("containerID", id), telemetry.FieldError(err))
-		return fmt.Errorf("runtime.Start: %w", err)
+		return nil, fmt.Errorf("runtime.Start: %w", err)
 	}
 	telemetry.Debug("runtime.Start: state loaded", telemetry.FieldString("containerID", id), telemetry.FieldString("status", state.Status))
 
@@ -97,29 +102,26 @@ func Start(ctx context.Context, id string) error {
 		log.Warn("runtime.Start: container not in created state",
 			telemetry.FieldString("containerID", id),
 			telemetry.FieldString("status", state.Status))
-		return fmt.Errorf("runtime.Start: container already started or deleted")
+		return nil, fmt.Errorf("runtime.Start: container already started or deleted")
 	}
 	telemetry.Debug("runtime.Start: status check passed", telemetry.FieldString("containerID", id))
 
-	// Get container config
 	configPath := filepath.Join("/run/thrive/containers", id, "config.json")
 	log.Info("runtime.Start: reading config file", telemetry.FieldString("configPath", configPath))
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		log.Error("runtime.Start: read config failed", telemetry.FieldString("configPath", configPath), telemetry.FieldError(err))
-		return fmt.Errorf("runtime.Start: read config: %w", err)
+		return nil, fmt.Errorf("runtime.Start: read config: %w", err)
 	}
-	telemetry.Debug("runtime.Start: config file read", telemetry.FieldInt("size", len(data)))
 
 	cfg := &ContainerConfig{}
 	if err := json.Unmarshal(data, cfg); err != nil {
 		log.Error("runtime.Start: unmarshal config failed", telemetry.FieldError(err))
-		return fmt.Errorf("runtime.Start: unmarshal config: %w", err)
+		return nil, fmt.Errorf("runtime.Start: unmarshal config: %w", err)
 	}
 	telemetry.Debug("runtime.Start: config unmarshaled", telemetry.FieldString("image", cfg.Image))
 
-	// Mount image rootfs via OverlayFS (fuse-overlayfs fallback for rootless).
 	log.Info("runtime.Start: mounting rootfs", telemetry.FieldString("image", cfg.Image))
 	rootfsPath, mountErr := image.Mount(ctx, cfg.Image, id)
 	if mountErr != nil {
@@ -130,20 +132,17 @@ func Start(ctx context.Context, id string) error {
 		log.Info("runtime.Start: rootfs mounted", telemetry.FieldString("rootfs", rootfsPath))
 	}
 
-	// Build command — default to /bin/sh if no command given
 	cmd := cfg.Command
 	if len(cmd) == 0 {
 		cmd = []string{"/bin/sh"}
 	}
 
-	// Resolve non-absolute binary names within the rootfs. exec.Command("nginx")
-	// would look in the PARENT process's PATH (which is empty for thrived's scratch
-	// container). We search the rootfs so the full absolute path is used.
+	// Resolve non-absolute binary names within the rootfs.
 	binary := cmd[0]
 	if rootfsPath != "" && len(binary) > 0 && binary[0] != '/' {
 		found := false
 		for _, dir := range []string{
-			"/usr/local/go/bin", // golang images install go here
+			"/usr/local/go/bin",
 			"/usr/local/sbin", "/usr/local/bin",
 			"/usr/sbin", "/usr/bin",
 			"/sbin", "/bin",
@@ -155,7 +154,6 @@ func Start(ctx context.Context, id string) error {
 			}
 		}
 		if !found {
-			// Wrap in shell so the container's PATH is used for lookup
 			shellCmd := strings.Join(cmd, " ")
 			binary = "/bin/sh"
 			cmd = []string{"/bin/sh", "-c", shellCmd}
@@ -167,37 +165,15 @@ func Start(ctx context.Context, id string) error {
 	execCmd := exec.Command(binary, cmd[1:]...)
 	execCmd.Args = cmd
 
-	// Merge image-default env vars with user-provided vars.
-	// User vars win: they are appended last so exec picks the last value for duplicates.
-	// (Linux exec uses the LAST matching entry.)
 	imageEnv, _, _ := image.ReadManifest(cfg.Image)
 	execCmd.Env = append(imageEnv, cfg.Env...)
 
-	// The Go toolchain binary uses /proc/self/exe to find GOROOT, which may
-	// not be available inside the container chroot. Derive GOROOT from the
-	// resolved binary path when it is not already set.
+	// Derive GOROOT for Go toolchain binaries that use /proc/self/exe to locate it.
 	if strings.HasSuffix(binary, "/bin/go") && !envContains(execCmd.Env, "GOROOT=") {
 		execCmd.Env = append(execCmd.Env, "GOROOT="+strings.TrimSuffix(binary, "/bin/go"))
 	}
 
-	execCmd.Stdin = os.Stdin
-
-	// Redirect container stdout/stderr to a log file so `thrive logs` can stream it.
-	containerDir := filepath.Join("/run/thrive/containers", id)
-	logPath := filepath.Join(containerDir, "logs")
-	logFile, logErr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if logErr != nil {
-		log.Warn("runtime.Start: cannot open log file, falling back to stdout", telemetry.FieldError(logErr))
-		execCmd.Stdout = os.Stdout
-		execCmd.Stderr = os.Stderr
-	} else {
-		execCmd.Stdout = logFile
-		execCmd.Stderr = logFile
-	}
-
 	// Full namespace isolation: PID, mount, UTS, IPC, network.
-	log.Info("runtime.Start: setting up namespace flags")
-
 	cloneFlags := uintptr(
 		syscall.CLONE_NEWPID |
 			syscall.CLONE_NEWNS |
@@ -208,53 +184,112 @@ func Start(ctx context.Context, id string) error {
 	sysProcAttr := &syscall.SysProcAttr{
 		Cloneflags: cloneFlags,
 	}
-	// Chroot into the merged rootfs so the container sees its own filesystem.
+
 	if rootfsPath != "" {
 		sysProcAttr.Chroot = rootfsPath
 		execCmd.Dir = "/"
-
 		if dnsErr := network.WriteResolvConf(rootfsPath); dnsErr != nil {
 			log.Warn("runtime.Start: WriteResolvConf failed (non-fatal)", telemetry.FieldError(dnsErr))
 		}
 	}
 
-	// Pre-create volume mount destinations inside the container rootfs.
-	// The actual bind-mounting happens in a ProcAttr.Sys callback after clone.
-	for _, mnt := range cfg.Mounts {
-		if rootfsPath != "" {
-			dest := rootfsPath + mnt.Destination
-			if mkErr := os.MkdirAll(dest, 0755); mkErr != nil {
-				log.Warn("runtime.Start: mkdir volume dest", telemetry.FieldString("dest", dest), telemetry.FieldError(mkErr))
+	// Bind-mount volumes in the parent namespace before the fork.
+	// CLONE_NEWNS copies the parent's mount table into the child; any bind mounts
+	// done here are therefore visible inside the container after the chroot.
+	// We lazy-unmount them from the parent namespace right after Start so the host
+	// mount table stays clean.
+	var parentBinds []string
+	if rootfsPath != "" {
+		for _, mnt := range cfg.Mounts {
+			dest := filepath.Join(rootfsPath, mnt.Destination)
+			// Match source type: directory → mkdir, file → mkfile.
+			if srcInfo, statErr := os.Stat(mnt.Source); statErr == nil && !srcInfo.IsDir() {
+				os.MkdirAll(filepath.Dir(dest), 0755)
+				if f, createErr := os.OpenFile(dest, os.O_CREATE|os.O_RDONLY, 0644); createErr == nil {
+					f.Close()
+				}
+			} else {
+				os.MkdirAll(dest, 0755)
 			}
+			if bindErr := syscall.Mount(mnt.Source, dest, "", syscall.MS_BIND|syscall.MS_REC, ""); bindErr != nil {
+				log.Warn("runtime.Start: bind mount failed",
+					telemetry.FieldString("src", mnt.Source),
+					telemetry.FieldString("dest", dest),
+					telemetry.FieldError(bindErr))
+				continue
+			}
+			parentBinds = append(parentBinds, dest)
+			log.Info("runtime.Start: bound volume", telemetry.FieldString("src", mnt.Source), telemetry.FieldString("dest", mnt.Destination))
 		}
 	}
 
-	execCmd.SysProcAttr = sysProcAttr
-	telemetry.Debug("runtime.Start: SysProcAttr configured", telemetry.FieldInt("cloneflags", int(cloneFlags)))
+	containerDir := filepath.Join("/run/thrive/containers", id)
+
+	// Wire stdio: PTY for -t, direct for -i, log file for background.
+	var ptmx *os.File
+	var ptsSlave *os.File // slave side; closed in parent after Start
+	if cfg.TTY {
+		var ptyErr error
+		ptmx, ptsSlave, ptyErr = setupPTY(execCmd, sysProcAttr)
+		if ptyErr != nil {
+			return nil, fmt.Errorf("runtime.Start: PTY setup: %w", ptyErr)
+		}
+	} else if cfg.Interactive {
+		execCmd.Stdin = os.Stdin
+		execCmd.Stdout = os.Stdout
+		execCmd.Stderr = os.Stderr
+		execCmd.SysProcAttr = sysProcAttr
+	} else {
+		execCmd.Stdin = os.Stdin
+		logPath := filepath.Join(containerDir, "logs")
+		logFile, logErr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if logErr != nil {
+			log.Warn("runtime.Start: cannot open log file, falling back to stdout", telemetry.FieldError(logErr))
+			execCmd.Stdout = os.Stdout
+			execCmd.Stderr = os.Stderr
+		} else {
+			execCmd.Stdout = logFile
+			execCmd.Stderr = logFile
+		}
+		execCmd.SysProcAttr = sysProcAttr
+		if logFile != nil {
+			defer logFile.Close()
+		}
+	}
 
 	if len(cfg.Secrets) > 0 {
 		log.Info("runtime.Start: injecting secrets", telemetry.FieldString("containerID", id), telemetry.FieldInt("count", len(cfg.Secrets)))
-		if err := secrets.Inject(id, cfg.Secrets); err != nil {
-			log.Error("runtime.Start: secrets.Inject failed", telemetry.FieldString("containerID", id), telemetry.FieldError(err))
+		if sErr := secrets.Inject(id, cfg.Secrets); sErr != nil {
+			log.Error("runtime.Start: secrets.Inject failed", telemetry.FieldString("containerID", id), telemetry.FieldError(sErr))
 		}
 	}
 
 	log.Info("runtime.Start: starting process")
-	err = execCmd.Start()
-	if logFile != nil && logErr == nil {
-		// Log file is now owned by the child; close our copy in the parent.
-		logFile.Close()
+	if startErr := execCmd.Start(); startErr != nil {
+		if ptmx != nil {
+			ptmx.Close()
+		}
+		if ptsSlave != nil {
+			ptsSlave.Close()
+		}
+		log.Error("runtime.Start: exec.Start failed", telemetry.FieldError(startErr))
+		return nil, fmt.Errorf("runtime.Start: exec: %w", startErr)
 	}
-	if err != nil {
-		log.Error("runtime.Start: exec.Start failed", telemetry.FieldError(err))
-		return fmt.Errorf("runtime.Start: exec: %w", err)
+	// Parent no longer needs the slave side; child inherited it via FD 0/1/2.
+	if ptsSlave != nil {
+		ptsSlave.Close()
+	}
+
+	// Detach bind mounts from the parent namespace; child's CLONE_NEWNS copy survives.
+	for _, dest := range parentBinds {
+		if umErr := syscall.Unmount(dest, syscall.MNT_DETACH); umErr != nil {
+			log.Warn("runtime.Start: parent-side unmount failed", telemetry.FieldString("dest", dest), telemetry.FieldError(umErr))
+		}
 	}
 
 	pid := execCmd.Process.Pid
 	log.Info("runtime.Start: process started", telemetry.FieldInt("pid", pid))
 
-	// Set up container network isolation: bridge + veth pair + port forwarding.
-	// Best-effort: network failures are logged but don't abort the container.
 	var containerIP string
 	if cfg.NetworkMode != "host" && cfg.NetworkMode != "none" {
 		if bridgeErr := network.EnsureBridge(); bridgeErr != nil {
@@ -266,7 +301,6 @@ func Start(ctx context.Context, id string) error {
 			} else {
 				containerIP = veth.ContainerIP
 				log.Info("runtime.Start: network configured", telemetry.FieldString("ip", containerIP))
-				// Apply port forwarding rules
 				for _, pm := range cfg.Ports {
 					if pfErr := network.AddPortForward(containerIP, pm.HostPort, pm.ContainerPort, pm.Protocol); pfErr != nil {
 						log.Warn("runtime.Start: AddPortForward failed", telemetry.FieldError(pfErr))
@@ -276,7 +310,6 @@ func Start(ctx context.Context, id string) error {
 		}
 	}
 
-	// Wire cgroup v2 resource limits.
 	if cgMgr, cgErr := cgroup.New(id); cgErr != nil {
 		log.Warn("runtime.Start: cgroup.New failed", telemetry.FieldString("containerID", id), telemetry.FieldError(cgErr))
 	} else {
@@ -284,32 +317,29 @@ func Start(ctx context.Context, id string) error {
 			log.Warn("runtime.Start: cgroup.Apply failed", telemetry.FieldInt("pid", pid), telemetry.FieldError(applyErr))
 		}
 		if cfg.Resources.MemoryLimit > 0 {
-			if err := cgMgr.SetMemoryLimit(cfg.Resources.MemoryLimit); err != nil {
-				log.Warn("runtime.Start: SetMemoryLimit failed", telemetry.FieldError(err))
+			if limErr := cgMgr.SetMemoryLimit(cfg.Resources.MemoryLimit); limErr != nil {
+				log.Warn("runtime.Start: SetMemoryLimit failed", telemetry.FieldError(limErr))
 			}
 		}
 		if cfg.Resources.CPUQuota > 0 {
-			if err := cgMgr.SetCPUQuota(cfg.Resources.CPUQuota); err != nil {
-				log.Warn("runtime.Start: SetCPUQuota failed", telemetry.FieldError(err))
+			if quotaErr := cgMgr.SetCPUQuota(cfg.Resources.CPUQuota); quotaErr != nil {
+				log.Warn("runtime.Start: SetCPUQuota failed", telemetry.FieldError(quotaErr))
 			}
 		}
 	}
 
-	// Save running state immediately so ps/kill work without waiting for exit.
 	state.PID = pid
 	state.Status = "running"
 	if err := saveState(containerDir, state); err != nil {
 		log.Error("runtime.Start: saveState (running) failed", telemetry.FieldString("containerID", id), telemetry.FieldError(err))
 	}
 
-	// Capture containerIP in closure for teardown
 	capturedContainerIP := containerIP
 	capturedCfg := cfg
 
-	// Wait for process exit in the background; update state and clean up resources when done.
 	go func() {
-		if err := execCmd.Wait(); err != nil {
-			log.Warn("runtime.Start: process wait error", telemetry.FieldString("containerID", id), telemetry.FieldError(err))
+		if waitErr := execCmd.Wait(); waitErr != nil {
+			log.Warn("runtime.Start: process wait error", telemetry.FieldString("containerID", id), telemetry.FieldError(waitErr))
 		}
 		exitCode := 0
 		if execCmd.ProcessState != nil {
@@ -323,7 +353,6 @@ func Start(ctx context.Context, id string) error {
 			log.Error("runtime.Start: saveState (stopped) failed", telemetry.FieldString("containerID", id), telemetry.FieldError(saveErr))
 		}
 
-		// Tear down network (veth + port forward rules)
 		if capturedContainerIP != "" {
 			for _, pm := range capturedCfg.Ports {
 				network.RemovePortForward(capturedContainerIP, pm.HostPort, pm.ContainerPort, pm.Protocol)
@@ -340,7 +369,54 @@ func Start(ctx context.Context, id string) error {
 	}()
 
 	log.Info("runtime.Start: container running", telemetry.FieldString("containerID", id), telemetry.FieldInt("pid", pid))
-	return nil
+	return ptmx, nil
+}
+
+// setupPTY allocates a pseudo-terminal pair, wires the slave to the command's
+// stdio, and configures SysProcAttr for session leadership.
+// Returns (master, slave, err). The caller must close slave after execCmd.Start()
+// and close master when the interactive session ends.
+func setupPTY(execCmd *exec.Cmd, attr *syscall.SysProcAttr) (ptmx *os.File, pts *os.File, err error) {
+	// Open PTY master; O_CLOEXEC keeps it out of the child process.
+	ptmxFd, openErr := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_CLOEXEC, 0)
+	if openErr != nil {
+		return nil, nil, fmt.Errorf("open /dev/ptmx: %w", openErr)
+	}
+	ptmx = os.NewFile(uintptr(ptmxFd), "/dev/ptmx")
+
+	// Unlock the slave PTY (no-op on Linux ≥ 4.1 but required for POSIX).
+	unix.IoctlSetInt(ptmxFd, unix.TIOCSPTLCK, 0) //nolint:errcheck
+
+	// TIOCGPTN returns the slave PTY number; construct /dev/pts/<n> from it.
+	var ptyno uint32
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(ptmxFd), unix.TIOCGPTN, uintptr(unsafe.Pointer(&ptyno))); errno != 0 {
+		ptmx.Close()
+		return nil, nil, fmt.Errorf("TIOCGPTN: %w", errno)
+	}
+	slaveName := fmt.Sprintf("/dev/pts/%d", ptyno)
+
+	// O_NOCTTY so the parent opening the slave doesn't steal the controlling terminal.
+	pts, ptsErr := os.OpenFile(slaveName, os.O_RDWR|syscall.O_NOCTTY, 0)
+	if ptsErr != nil {
+		ptmx.Close()
+		return nil, nil, fmt.Errorf("open pts %s: %w", slaveName, ptsErr)
+	}
+
+	// Mirror parent terminal size into the PTY so the shell renders correctly.
+	if ws, wsErr := unix.IoctlGetWinsize(int(os.Stdin.Fd()), unix.TIOCGWINSZ); wsErr == nil {
+		unix.IoctlSetWinsize(ptmxFd, unix.TIOCSWINSZ, ws) //nolint:errcheck
+	}
+
+	execCmd.Stdin = pts
+	execCmd.Stdout = pts
+	execCmd.Stderr = pts
+
+	attr.Setsid = true
+	attr.Setctty = true
+	attr.Ctty = 0 // FD 0 (stdin = pts) becomes the controlling terminal in the child
+	execCmd.SysProcAttr = attr
+
+	return ptmx, pts, nil
 }
 
 // Kill sends a signal to the container's main process.

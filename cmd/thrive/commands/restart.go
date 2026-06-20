@@ -53,7 +53,7 @@ func RestartCmd() *cobra.Command {
 			data, _ := json.Marshal(s)
 			os.WriteFile(filepath.Join(containerDir, "state.json"), data, 0644)
 
-			if err := runtime.Start(ctx, id); err != nil {
+			if _, err := runtime.Start(ctx, id); err != nil {
 				fmt.Fprintf(os.Stderr, "Error restarting container: %v\n", err)
 				os.Exit(1)
 			}
