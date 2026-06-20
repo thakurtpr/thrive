@@ -17,6 +17,8 @@ import (
 	"strings"
 	"syscall"
 
+	"runtime"
+
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -141,6 +143,13 @@ func Pull(ctx context.Context, ref string, opts PullOptions) (*Image, error) {
 	}
 	telemetry.Debug("image.Pull: image directory created", telemetry.FieldString("path", imgDir))
 
+	// Return cached image if manifest already exists (idempotent pull).
+	cachedManifest := filepath.Join(imgDir, "manifest.json")
+	if _, statErr := os.Stat(cachedManifest); statErr == nil {
+		log.Info("image.Pull: using cached image", telemetry.FieldString("ref", ref))
+		return &Image{Ref: parsed.String()}, nil
+	}
+
 	var auth authn.Authenticator
 	if opts.Username != "" {
 		auth = &authn.Basic{Username: opts.Username, Password: opts.Password}
@@ -148,8 +157,12 @@ func Pull(ctx context.Context, ref string, opts PullOptions) (*Image, error) {
 	}
 	telemetry.Debug("image.Pull: auth configured", telemetry.FieldBool("hasAuth", auth != nil))
 
-	log.Info("image.Pull: fetching image from registry", telemetry.FieldString("ref", ref))
-	descriptor, err := remote.Get(parsed, remote.WithAuth(auth))
+	// Select the platform that matches the running binary so container images
+	// execute natively without QEMU emulation.
+	platform := v1.Platform{OS: "linux", Architecture: runtime.GOARCH}
+
+	log.Info("image.Pull: fetching image from registry", telemetry.FieldString("ref", ref), telemetry.FieldString("platform", runtime.GOARCH))
+	descriptor, err := remote.Get(parsed, remote.WithAuth(auth), remote.WithPlatform(platform))
 	if err != nil {
 		log.Error("image.Pull: remote.Get failed", telemetry.FieldString("ref", ref), telemetry.FieldError(err))
 		return nil, fmt.Errorf("image.Pull: remote.Get: %w", err)
@@ -229,14 +242,28 @@ func Pull(ctx context.Context, ref string, opts PullOptions) (*Image, error) {
 		})
 	}
 
+	// Read OCI image config to capture default env vars, entrypoint, and cmd.
+	var imgEnv, imgEntrypoint, imgCmd []string
+	if cf, cfErr := img.ConfigFile(); cfErr == nil {
+		imgEnv = cf.Config.Env
+		imgEntrypoint = []string(cf.Config.Entrypoint)
+		imgCmd = []string(cf.Config.Cmd)
+	}
+
 	metadata := struct {
-		Ref    string
-		Digest string
-		Layers []Layer
+		Ref        string
+		Digest     string
+		Layers     []Layer
+		Env        []string `json:",omitempty"`
+		Entrypoint []string `json:",omitempty"`
+		Cmd        []string `json:",omitempty"`
 	}{
-		Ref:    parsed.String(),
-		Digest: descriptor.Digest.String(),
-		Layers: imgLayers,
+		Ref:        parsed.String(),
+		Digest:     descriptor.Digest.String(),
+		Layers:     imgLayers,
+		Env:        imgEnv,
+		Entrypoint: imgEntrypoint,
+		Cmd:        imgCmd,
 	}
 
 	log.Info("image.Pull: saving manifest", telemetry.FieldString("ref", parsed.String()))
@@ -253,17 +280,39 @@ func Pull(ctx context.Context, ref string, opts PullOptions) (*Image, error) {
 	log.Info("image.Pull: completed successfully", telemetry.FieldString("ref", parsed.String()), telemetry.FieldString("digest", descriptor.Digest.String()[:12]), telemetry.FieldInt("layers", len(imgLayers)))
 
 	return &Image{
-		Ref:    parsed.String(),
-		Digest: descriptor.Digest.String(),
-		Layers: imgLayers,
+		Ref:        parsed.String(),
+		Digest:     descriptor.Digest.String(),
+		Layers:     imgLayers,
+		Env:        imgEnv,
+		Entrypoint: imgEntrypoint,
+		Cmd:        imgCmd,
 	}, nil
+}
+
+// ReadManifest reads the stored manifest.json for an image and returns
+// Env, Entrypoint, and Cmd from it. Returns empty slices on any error.
+func ReadManifest(imageRef string) (env, entrypoint, cmd []string) {
+	imgDir := filepath.Join("/var/lib/thrive/images", SafeRef(imageRef))
+	data, err := os.ReadFile(filepath.Join(imgDir, "manifest.json"))
+	if err != nil {
+		return nil, nil, nil
+	}
+	var m struct {
+		Env        []string `json:"Env"`
+		Entrypoint []string `json:"Entrypoint"`
+		Cmd        []string `json:"Cmd"`
+	}
+	if jsonErr := json.Unmarshal(data, &m); jsonErr != nil {
+		return nil, nil, nil
+	}
+	return m.Env, m.Entrypoint, m.Cmd
 }
 
 func Mount(ctx context.Context, imageRef, containerID string) (string, error) {
 	log := telemetry.Logger()
 	log.Info("image.Mount: starting", telemetry.FieldString("imageRef", imageRef), telemetry.FieldString("containerID", containerID))
 
-	imgDir := filepath.Join("/var/lib/thrive/images", imageRef)
+	imgDir := filepath.Join("/var/lib/thrive/images", SafeRef(imageRef))
 	metaPath := filepath.Join(imgDir, "manifest.json")
 	data, err := os.ReadFile(metaPath)
 	if err != nil {

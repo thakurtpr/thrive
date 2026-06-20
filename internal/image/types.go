@@ -11,9 +11,12 @@ func SafeRef(ref string) string {
 
 // Image represents a pulled OCI image.
 type Image struct {
-	Ref    string
-	Digest string
-	Layers []Layer
+	Ref        string
+	Digest     string
+	Layers     []Layer
+	Env        []string // image-default environment variables (from OCI config)
+	Entrypoint []string // image-default entrypoint (from OCI config)
+	Cmd        []string // image-default cmd (from OCI config)
 }
 
 // Layer represents a single OCI image layer.

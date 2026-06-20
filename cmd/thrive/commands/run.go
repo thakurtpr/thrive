@@ -85,6 +85,11 @@ func RunCmd() *cobra.Command {
 					break
 				}
 				if state.Status == "stopped" {
+					// Stream container logs to stdout before cleanup.
+					logPath := "/run/thrive/containers/" + container.ID + "/logs"
+					if logData, readErr := os.ReadFile(logPath); readErr == nil {
+						os.Stdout.Write(logData)
+					}
 					if rm {
 						runtime.Delete(ctx, container.ID)
 					}
@@ -103,6 +108,8 @@ func RunCmd() *cobra.Command {
 	cmd.Flags().StringArrayVarP(&portSpecs, "publish", "p", nil, "Publish port(s): host:container[/proto]")
 	cmd.Flags().StringArrayVarP(&volumeSpecs, "volume", "v", nil, "Bind mount: /host:/container")
 	cmd.Flags().StringVar(&netMode, "network", "", "Network mode (host, none, or default bridge)")
+	// Stop flag parsing after the image name so container commands can include flags.
+	cmd.Flags().SetInterspersed(false)
 	return cmd
 }
 

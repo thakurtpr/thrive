@@ -142,7 +142,12 @@ func Start(ctx context.Context, id string) error {
 	binary := cmd[0]
 	if rootfsPath != "" && len(binary) > 0 && binary[0] != '/' {
 		found := false
-		for _, dir := range []string{"/usr/sbin", "/usr/bin", "/sbin", "/bin", "/usr/local/sbin", "/usr/local/bin"} {
+		for _, dir := range []string{
+			"/usr/local/go/bin", // golang images install go here
+			"/usr/local/sbin", "/usr/local/bin",
+			"/usr/sbin", "/usr/bin",
+			"/sbin", "/bin",
+		} {
 			if _, statErr := os.Stat(filepath.Join(rootfsPath, dir, binary)); statErr == nil {
 				binary = filepath.Join(dir, binary)
 				found = true
@@ -161,7 +166,20 @@ func Start(ctx context.Context, id string) error {
 	log.Info("runtime.Start: preparing exec.Command", telemetry.FieldString("command", binary))
 	execCmd := exec.Command(binary, cmd[1:]...)
 	execCmd.Args = cmd
-	execCmd.Env = cfg.Env
+
+	// Merge image-default env vars with user-provided vars.
+	// User vars win: they are appended last so exec picks the last value for duplicates.
+	// (Linux exec uses the LAST matching entry.)
+	imageEnv, _, _ := image.ReadManifest(cfg.Image)
+	execCmd.Env = append(imageEnv, cfg.Env...)
+
+	// The Go toolchain binary uses /proc/self/exe to find GOROOT, which may
+	// not be available inside the container chroot. Derive GOROOT from the
+	// resolved binary path when it is not already set.
+	if strings.HasSuffix(binary, "/bin/go") && !envContains(execCmd.Env, "GOROOT=") {
+		execCmd.Env = append(execCmd.Env, "GOROOT="+strings.TrimSuffix(binary, "/bin/go"))
+	}
+
 	execCmd.Stdin = os.Stdin
 
 	// Redirect container stdout/stderr to a log file so `thrive logs` can stream it.
@@ -405,4 +423,14 @@ func saveState(dir string, state *ContainerState) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, "state.json"), data, 0644)
+}
+
+// envContains reports whether any entry in env has the given prefix.
+func envContains(env []string, prefix string) bool {
+	for _, e := range env {
+		if strings.HasPrefix(e, prefix) {
+			return true
+		}
+	}
+	return false
 }
