@@ -60,7 +60,3 @@ echo "==> Packaging ${OUT}"
 tar -czf ${OUT} -C $TMP kernel initrd.img vfkit
 echo "Built: ${OUT} ($(du -sh ${OUT} | cut -f1))"
 
-if command -v gh &>/dev/null; then
-  echo "==> Uploading to GitHub releases"
-  gh release upload latest ${OUT} --clobber
-fi
