@@ -18,6 +18,7 @@ services:
     capabilities:
       - CAP_SYS_ADMIN
       - CAP_NET_ADMIN
+      - CAP_SYS_CHROOT
       - CAP_SYS_PTRACE
       - CAP_NET_RAW
       - CAP_SETUID
@@ -25,6 +26,7 @@ services:
       - CAP_CHOWN
       - CAP_DAC_OVERRIDE
       - CAP_FOWNER
+      - CAP_MKNOD
     mounts:
       - type: bind
         source: /var/run

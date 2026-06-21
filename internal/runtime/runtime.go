@@ -174,14 +174,20 @@ func Start(ctx context.Context, id string) (*os.File, error) {
 		execCmd.Env = append(execCmd.Env, "GOROOT="+strings.TrimSuffix(binary, "/bin/go"))
 	}
 
-	// Full namespace isolation: PID, mount, UTS, IPC, network.
-	cloneFlags := uintptr(
-		syscall.CLONE_NEWPID |
-			syscall.CLONE_NEWNS |
-			syscall.CLONE_NEWUTS |
-			syscall.CLONE_NEWIPC |
-			syscall.CLONE_NEWNET,
-	)
+	// When running inside the LinuxKit VM (THRIVE_VSOCK_PORT is set), the VM
+	// itself provides process isolation and the containerd seccomp profile
+	// blocks namespace clone flags. Use chroot-only isolation instead.
+	insideVM := os.Getenv("THRIVE_VSOCK_PORT") != ""
+	var cloneFlags uintptr
+	if !insideVM {
+		cloneFlags = uintptr(
+			syscall.CLONE_NEWPID |
+				syscall.CLONE_NEWNS |
+				syscall.CLONE_NEWUTS |
+				syscall.CLONE_NEWIPC |
+				syscall.CLONE_NEWNET,
+		)
+	}
 	sysProcAttr := &syscall.SysProcAttr{
 		Cloneflags: cloneFlags,
 	}
