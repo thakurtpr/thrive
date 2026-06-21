@@ -344,9 +344,13 @@ func Mount(ctx context.Context, imageRef, containerID string) (string, error) {
 	}
 
 	// OverlayFS requires layers in bottom-to-top order for lowerdir (lowest first).
+	// Always derive the layer path from the digest rather than l.Path: the macOS
+	// host stores absolute host paths in manifest.json which are invalid inside
+	// the Linux VM (virtiofs maps ~/.thrive/images/ → /var/lib/thrive/images/).
 	lowerParts := make([]string, len(metadata.Layers))
 	for i, l := range metadata.Layers {
-		lowerParts[len(metadata.Layers)-1-i] = l.Path
+		layerDir := filepath.Join(imgDir, "layers", l.Digest)
+		lowerParts[len(metadata.Layers)-1-i] = layerDir
 	}
 	lowerDirs := strings.Join(lowerParts, ":")
 

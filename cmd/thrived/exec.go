@@ -473,20 +473,43 @@ func handleExec(ctx context.Context, req *Request, w io.Writer) {
 		return
 	}
 
-	nsenterArgs := []string{
-		"--target", strconv.Itoa(state.PID),
-		"--mount", "--pid", "--ipc", "--uts", "--net",
-		"--",
+	var execCmd *exec.Cmd
+	if state.HasNamespaces {
+		// Container was started with namespace isolation — enter namespaces via nsenter.
+		nsenterArgs := []string{
+			"--target", strconv.Itoa(state.PID),
+			"--mount", "--pid", "--ipc", "--uts", "--net",
+			"--",
+		}
+		nsenterArgs = append(nsenterArgs, cmd...)
+		execCmd = exec.CommandContext(ctx, "nsenter", nsenterArgs...)
+	} else {
+		// Container runs chroot-only (e.g. inside VM). Exec directly in the rootfs.
+		rootfsDir := filepath.Join("/run/thrive/containers", containerID, "merged")
+		if _, statErr := os.Stat(rootfsDir); os.IsNotExist(statErr) && state.RootfsPath != "" {
+			rootfsDir = state.RootfsPath
+		}
+		binary := cmd[0]
+		// Resolve relative binary names through standard PATH dirs inside the rootfs.
+		if !strings.HasPrefix(binary, "/") {
+			for _, dir := range []string{"/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin"} {
+				if _, statErr := os.Stat(filepath.Join(rootfsDir, dir, binary)); statErr == nil {
+					binary = filepath.Join(dir, binary)
+					break
+				}
+			}
+		}
+		execCmd = exec.CommandContext(ctx, binary, cmd[1:]...)
+		execCmd.SysProcAttr = &syscall.SysProcAttr{Chroot: rootfsDir}
+		execCmd.Dir = "/"
 	}
-	nsenterArgs = append(nsenterArgs, cmd...)
 
-	execCmd := exec.CommandContext(ctx, "nsenter", nsenterArgs...)
 	pr, pw := io.Pipe()
 	execCmd.Stdout = pw
 	execCmd.Stderr = pw
 
 	if err := execCmd.Start(); err != nil {
-		sendError(w, req.ID, 1, fmt.Sprintf("nsenter failed: %v", err))
+		sendError(w, req.ID, 1, fmt.Sprintf("exec failed: %v", err))
 		return
 	}
 

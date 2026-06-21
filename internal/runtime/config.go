@@ -48,14 +48,15 @@ type RestartPolicy struct {
 
 // ContainerState represents the current state of a container.
 type ContainerState struct {
-	ID          string    `json:"id"`
-	Status      string    `json:"status"`
-	PID         int       `json:"pid"`
-	StartedAt   time.Time `json:"startedAt"`
-	FinishedAt  time.Time `json:"finishedAt"`
-	ExitCode    int       `json:"exitCode"`
-	RootfsPath  string    `json:"rootfsPath"`
-	NetworkInfo string    `json:"networkInfo,omitempty"`
+	ID            string    `json:"id"`
+	Status        string    `json:"status"`
+	PID           int       `json:"pid"`
+	StartedAt     time.Time `json:"startedAt"`
+	FinishedAt    time.Time `json:"finishedAt"`
+	ExitCode      int       `json:"exitCode"`
+	RootfsPath    string    `json:"rootfsPath"`
+	NetworkInfo   string    `json:"networkInfo,omitempty"`
+	HasNamespaces bool      `json:"hasNamespaces"` // false when running chroot-only (e.g. inside VM)
 }
 
 // Container represents a running or stopped container.

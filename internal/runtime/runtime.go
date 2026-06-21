@@ -6,6 +6,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -265,25 +266,76 @@ func Start(ctx context.Context, id string) (*os.File, error) {
 	}
 
 	log.Info("runtime.Start: starting process")
+	hasNamespaces := cloneFlags != 0
 	if startErr := execCmd.Start(); startErr != nil {
-		if ptmx != nil {
-			ptmx.Close()
+		// If namespace creation was blocked (e.g. thrived running inside a
+		// container runtime with seccomp restrictions), retry with chroot-only
+		// isolation. The VM itself provides process isolation.
+		if cloneFlags != 0 && isPermissionError(startErr) {
+			log.Warn("runtime.Start: namespace creation blocked, retrying chroot-only", telemetry.FieldError(startErr))
+			hasNamespaces = false
+			fallbackAttr := &syscall.SysProcAttr{}
+			if rootfsPath != "" {
+				fallbackAttr.Chroot = rootfsPath
+			}
+			if ptmx != nil {
+				ptmx.Close()
+				ptmx = nil
+			}
+			if ptsSlave != nil {
+				ptsSlave.Close()
+				ptsSlave = nil
+			}
+			execCmd2 := exec.Command(execCmd.Path, execCmd.Args[1:]...)
+			execCmd2.Args = execCmd.Args
+			execCmd2.Env = execCmd.Env
+			execCmd2.Stdin = execCmd.Stdin
+			execCmd2.Stdout = execCmd.Stdout
+			execCmd2.Stderr = execCmd.Stderr
+			execCmd2.Dir = execCmd.Dir
+			if cfg.TTY {
+				var ptyErr error
+				ptmx, ptsSlave, ptyErr = setupPTY(execCmd2, fallbackAttr)
+				if ptyErr != nil {
+					return nil, fmt.Errorf("runtime.Start: PTY setup (fallback): %w", ptyErr)
+				}
+			} else {
+				execCmd2.SysProcAttr = fallbackAttr
+			}
+			execCmd = execCmd2
+			if startErr2 := execCmd.Start(); startErr2 != nil {
+				if ptmx != nil {
+					ptmx.Close()
+				}
+				if ptsSlave != nil {
+					ptsSlave.Close()
+				}
+				log.Error("runtime.Start: exec.Start (fallback) failed", telemetry.FieldError(startErr2))
+				return nil, fmt.Errorf("runtime.Start: exec: %w", startErr2)
+			}
+		} else {
+			if ptmx != nil {
+				ptmx.Close()
+			}
+			if ptsSlave != nil {
+				ptsSlave.Close()
+			}
+			log.Error("runtime.Start: exec.Start failed", telemetry.FieldError(startErr))
+			return nil, fmt.Errorf("runtime.Start: exec: %w", startErr)
 		}
-		if ptsSlave != nil {
-			ptsSlave.Close()
-		}
-		log.Error("runtime.Start: exec.Start failed", telemetry.FieldError(startErr))
-		return nil, fmt.Errorf("runtime.Start: exec: %w", startErr)
 	}
 	// Parent no longer needs the slave side; child inherited it via FD 0/1/2.
 	if ptsSlave != nil {
 		ptsSlave.Close()
 	}
 
-	// Detach bind mounts from the parent namespace; child's CLONE_NEWNS copy survives.
-	for _, dest := range parentBinds {
-		if umErr := syscall.Unmount(dest, syscall.MNT_DETACH); umErr != nil {
-			log.Warn("runtime.Start: parent-side unmount failed", telemetry.FieldString("dest", dest), telemetry.FieldError(umErr))
+	// Detach bind mounts from the parent namespace only when CLONE_NEWNS succeeded.
+	// In chroot-only mode the mounts stay in the parent namespace (cleaned up on delete).
+	if hasNamespaces {
+		for _, dest := range parentBinds {
+			if umErr := syscall.Unmount(dest, syscall.MNT_DETACH); umErr != nil {
+				log.Warn("runtime.Start: parent-side unmount failed", telemetry.FieldString("dest", dest), telemetry.FieldError(umErr))
+			}
 		}
 	}
 
@@ -330,6 +382,8 @@ func Start(ctx context.Context, id string) (*os.File, error) {
 
 	state.PID = pid
 	state.Status = "running"
+	state.HasNamespaces = hasNamespaces
+	state.RootfsPath = rootfsPath
 	if err := saveState(containerDir, state); err != nil {
 		log.Error("runtime.Start: saveState (running) failed", telemetry.FieldString("containerID", id), telemetry.FieldError(err))
 	}
@@ -417,6 +471,20 @@ func setupPTY(execCmd *exec.Cmd, attr *syscall.SysProcAttr) (ptmx *os.File, pts 
 	execCmd.SysProcAttr = attr
 
 	return ptmx, pts, nil
+}
+
+// isPermissionError returns true when err is an EPERM or EACCES syscall error.
+// Used to detect namespace creation failures inside constrained environments.
+func isPermissionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var errno syscall.Errno
+	if strings.Contains(err.Error(), "operation not permitted") ||
+		strings.Contains(err.Error(), "permission denied") {
+		return true
+	}
+	return errors.As(err, &errno) && (errno == syscall.EPERM || errno == syscall.EACCES)
 }
 
 // Kill sends a signal to the container's main process.
