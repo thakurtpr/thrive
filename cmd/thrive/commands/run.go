@@ -37,6 +37,15 @@ func RunCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			ctx := context.Background()
 			imageRef := args[0]
+			containerArgs := args[1:]
+			// SetInterspersed(false) below stops cobra/pflag's normal flag
+			// parsing at the first positional arg (the image ref), which
+			// skips the usual stripping of a bare "--" separator. Strip it
+			// here so `thrive run <image> -- <cmd>` (the Docker convention)
+			// doesn't leak "--" into the container's command.
+			if len(containerArgs) > 0 && containerArgs[0] == "--" {
+				containerArgs = containerArgs[1:]
+			}
 
 			fmt.Printf("Pulling image: %s\n", imageRef)
 			img, err := image.Pull(ctx, imageRef, image.PullOptions{})
@@ -60,7 +69,7 @@ func RunCmd() *cobra.Command {
 			cfg := runtime.ContainerConfig{
 				ID:          containerID,
 				Image:       img.Ref,
-				Command:     args[1:],
+				Command:     containerArgs,
 				Env:         envVars,
 				Secrets:     secretNames,
 				Ports:       ports,

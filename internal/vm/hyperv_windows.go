@@ -9,24 +9,31 @@ import (
 	"io"
 	"net"
 	"time"
-
-	"github.com/Microsoft/go-winio"
 )
 
 type hyperVBridge struct {
 	conn net.Conn
+	dec  *json.Decoder
 }
 
+// newHyperVBridge accepts one connection from the Hyper-V socket listener.
+// Mirrors vsockBridge (vsock_darwin.go): the host listens before the VM
+// starts, and thrived (unmodified — cmd/thrived/vsock_linux.go) connects out
+// to VMADDR_CID_HOST over plain AF_VSOCK, which Linux's guest kernel routes
+// over Hyper-V sockets transparently.
 func newHyperVBridge() (Bridge, error) {
-	// Connect to Hyper-V VM via named pipe
-	pipePath := `\\.\pipe\thrive-daemon`
-
-	conn, err := winio.DialPipe(pipePath, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Hyper-V VM: %w", err)
+	if hvsockListener == nil {
+		if err := PrepareHVSOCKListener(vsockPort()); err != nil {
+			return nil, fmt.Errorf("hvsock: auto-prepare: %w", err)
+		}
 	}
 
-	return &hyperVBridge{conn: conn}, nil
+	conn, err := acceptHVSOCK(5 * time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("hvsock: accept: %w", err)
+	}
+
+	return &hyperVBridge{conn: conn, dec: json.NewDecoder(conn)}, nil
 }
 
 func (b *hyperVBridge) Exec(ctx context.Context, cmd string, args []string, opts map[string]any) ([]byte, error) {
@@ -37,20 +44,16 @@ func (b *hyperVBridge) Exec(ctx context.Context, cmd string, args []string, opts
 		return nil, err
 	}
 
-	b.conn.SetDeadline(time.Now().Add(30 * time.Second))
-
+	b.conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 	if _, err := b.conn.Write(append(data, '\n')); err != nil {
 		return nil, err
 	}
 
-	respData := make([]byte, 4096)
-	n, err := b.conn.Read(respData)
-	if err != nil {
-		return nil, err
-	}
+	// 10 minutes — pull/run operations can take several minutes for large images.
+	b.conn.SetReadDeadline(time.Now().Add(10 * time.Minute))
 
 	var resp map[string]any
-	if err := json.Unmarshal(respData[:n], &resp); err != nil {
+	if err := b.dec.Decode(&resp); err != nil {
 		return nil, fmt.Errorf("invalid daemon response: %w", err)
 	}
 
@@ -69,14 +72,22 @@ func (b *hyperVBridge) ExecStream(ctx context.Context, cmd string, args []string
 		return err
 	}
 
+	b.conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 	if _, err := b.conn.Write(append(data, '\n')); err != nil {
 		return err
 	}
 
-	decoder := json.NewDecoder(b.conn)
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		b.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+
 		var resp map[string]any
-		if err := decoder.Decode(&resp); err != nil {
+		if err := b.dec.Decode(&resp); err != nil {
 			return err
 		}
 

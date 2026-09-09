@@ -5,8 +5,10 @@ package vm
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 type Config struct {
@@ -21,6 +23,7 @@ type VMState struct {
 	PID         int    `json:"pid"`
 	CID         int    `json:"cid"`
 	VMType      string `json:"vm_type"`
+	VMID        string `json:"vm_id,omitempty"`
 	WSLInstance string `json:"wsl_instance,omitempty"`
 	LastStart   string `json:"last_start,omitempty"`
 }
@@ -110,8 +113,14 @@ func DetectVMType() string {
 	}
 }
 
+// isHyperVAvailable checks whether the Hyper-V Virtual Machine Management
+// service is present and running. Querying service status does not require
+// elevation (unlike New-VM/Start-VM), so this is safe to call from any shell.
 func isHyperVAvailable() bool {
-	// On Windows, check if Hyper-V is available via registry or WMIC
-	// Default to wsl2 until proper detection is implemented
-	return false
+	out, err := exec.Command("powershell.exe", "-NoProfile", "-Command",
+		"(Get-Service -Name vmms -ErrorAction SilentlyContinue).Status").CombinedOutput()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "Running"
 }

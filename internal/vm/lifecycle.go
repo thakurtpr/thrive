@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build darwin || windows
 
 package vm
 
@@ -15,19 +15,6 @@ const bootTimeout = 2 * time.Minute
 type launcher interface {
 	Start(ctx context.Context, cfg *Config) (*VMState, error)
 	Stop(ctx context.Context, state *VMState) error
-}
-
-func selectLauncher(vmType string) (launcher, error) {
-	switch vmType {
-	case "darwin-hv":
-		return newDarwinLauncher(), nil
-	case "hyperv":
-		return newHyperVLauncher(), nil
-	case "wsl2":
-		return newWSL2Launcher(), nil
-	default:
-		return nil, fmt.Errorf("unsupported vm type: %s", vmType)
-	}
 }
 
 // Start launches the VM and persists the resulting state.

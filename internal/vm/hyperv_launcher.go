@@ -1,10 +1,11 @@
-//go:build !linux
+//go:build windows
 
 package vm
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,8 @@ type hyperVLauncher struct {
 	lookPath        pathLookup
 	vmAlreadyExists func(ctx context.Context, name string) bool
 	vhdPath         func() string
+	vhdExists       func(path string) bool
+	prepareListener func(port uint32) error
 }
 
 func newHyperVLauncher() *hyperVLauncher {
@@ -27,6 +30,11 @@ func newHyperVLauncher() *hyperVLauncher {
 		runner:   realCommandRunner,
 		lookPath: exec.LookPath,
 		vhdPath:  func() string { return filepath.Join(ThriveDir(), "vm", "disk.vhdx") },
+		vhdExists: func(path string) bool {
+			_, err := os.Stat(path)
+			return err == nil
+		},
+		prepareListener: PrepareHVSOCKListener,
 	}
 	l.vmAlreadyExists = func(ctx context.Context, name string) bool {
 		out, err := l.runner(ctx, "powershell.exe", "-NoProfile", "-Command",
@@ -46,13 +54,30 @@ func (l *hyperVLauncher) Start(ctx context.Context, cfg *Config) (*VMState, erro
 	}
 
 	if !l.vmAlreadyExists(ctx, hyperVVMName) {
+		// vhdExists is nil in tests that construct hyperVLauncher directly
+		// without newHyperVLauncher() — real callers always go through the
+		// constructor, so the check is always enforced in production.
+		if l.vhdExists != nil && !l.vhdExists(l.vhdPath()) {
+			return nil, fmt.Errorf("VM image not found at %s — run 'thrive desktop init' first", l.vhdPath())
+		}
+
 		script := fmt.Sprintf(
 			"New-VM -Name '%s' -MemoryStartupBytes %dMB -Generation 2 -VHDPath '%s' -SwitchName 'Default Switch'; "+
-				"Set-VMProcessor -VMName '%s' -Count %d",
-			hyperVVMName, cfg.MemoryMB, l.vhdPath(), hyperVVMName, cfg.CPUCount,
+				"Set-VMProcessor -VMName '%s' -Count %d; "+
+				"Set-VMFirmware -VMName '%s' -EnableSecureBoot Off",
+			hyperVVMName, cfg.MemoryMB, l.vhdPath(), hyperVVMName, cfg.CPUCount, hyperVVMName,
 		)
 		if out, err := l.runner(ctx, binPath, "-NoProfile", "-Command", script); err != nil {
 			return nil, fmt.Errorf("New-VM failed: %w: %s", err, string(out))
+		}
+	}
+
+	// Listener must exist before Start-VM: the guest connects out within
+	// ~1s of boot, and a missing listener at that moment means the daemon
+	// falls back to its reconnect loop, delaying (not breaking) detection.
+	if l.prepareListener != nil {
+		if err := l.prepareListener(vsockPort()); err != nil {
+			return nil, fmt.Errorf("hvsock listener: %w", err)
 		}
 	}
 
@@ -61,10 +86,17 @@ func (l *hyperVLauncher) Start(ctx context.Context, cfg *Config) (*VMState, erro
 		return nil, fmt.Errorf("Start-VM failed: %w: %s", err, string(out))
 	}
 
+	vmID := ""
+	if out, err := l.runner(ctx, binPath, "-NoProfile", "-Command",
+		fmt.Sprintf("(Get-VM -Name '%s').VMId.Guid", hyperVVMName)); err == nil {
+		vmID = strings.TrimSpace(string(out))
+	}
+
 	return &VMState{
 		Version: "1.0",
 		Running: true,
 		VMType:  "hyperv",
+		VMID:    vmID,
 	}, nil
 }
 
@@ -80,5 +112,6 @@ func (l *hyperVLauncher) Stop(ctx context.Context, state *VMState) error {
 		fmt.Sprintf("Stop-VM -Name '%s' -Force", hyperVVMName)); err != nil {
 		return fmt.Errorf("Stop-VM failed: %w: %s", err, string(out))
 	}
+	CloseHVSOCKListener()
 	return nil
 }
