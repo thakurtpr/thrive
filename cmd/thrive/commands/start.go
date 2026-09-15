@@ -15,13 +15,23 @@ import (
 )
 
 func StartCmd() *cobra.Command {
-	return &cobra.Command{
+	var checkpointName string
+	cmd := &cobra.Command{
 		Use:   "start [container]",
 		Short: "Start a stopped container",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			ctx := context.Background()
 			id := args[0]
+
+			if checkpointName != "" {
+				if err := restoreCheckpoint(ctx, id, checkpointName); err != nil {
+					fmt.Fprintf(os.Stderr, "Error restoring checkpoint: %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Printf("container %s restored from checkpoint %s\n", id, checkpointName)
+				return
+			}
 
 			containerDir := filepath.Join("/run/thrive/containers", id)
 			stateData, err := os.ReadFile(filepath.Join(containerDir, "state.json"))
@@ -51,4 +61,6 @@ func StartCmd() *cobra.Command {
 			fmt.Printf("container %s started\n", id)
 		},
 	}
+	cmd.Flags().StringVar(&checkpointName, "checkpoint", "", "Restore from checkpoint (requires CRIU)")
+	return cmd
 }

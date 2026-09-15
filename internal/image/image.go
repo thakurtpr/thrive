@@ -26,6 +26,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
+	"github.com/thakurprasadrout/thrive/internal/events"
 	"github.com/thakurprasadrout/thrive/internal/telemetry"
 )
 
@@ -120,6 +121,7 @@ func Push(ctx context.Context, ref string, opts PushOptions) error {
 	}
 
 	log.Info("image.Push: completed", telemetry.FieldString("ref", ref))
+	events.Log("image", "push", parsed.String(), nil)
 	return nil
 }
 
@@ -278,6 +280,7 @@ func Pull(ctx context.Context, ref string, opts PullOptions) (*Image, error) {
 	}
 
 	log.Info("image.Pull: completed successfully", telemetry.FieldString("ref", parsed.String()), telemetry.FieldString("digest", descriptor.Digest.String()[:12]), telemetry.FieldInt("layers", len(imgLayers)))
+	events.Log("image", "pull", parsed.String(), nil)
 
 	return &Image{
 		Ref:        parsed.String(),

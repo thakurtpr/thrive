@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/thakurprasadrout/thrive/internal/image"
+	"github.com/thakurprasadrout/thrive/internal/registry"
 )
 
 func BuildCmd() *cobra.Command {
@@ -54,6 +55,11 @@ func PullCmd() *cobra.Command {
 			ref := args[0]
 			fmt.Printf("Pulling %s ...\n", ref)
 
+			if username == "" {
+				if c := registry.StoredAuth(registry.RegistryHost(ref)); c != nil {
+					username, password = c.Username, c.Password
+				}
+			}
 			img, err := image.Pull(context.Background(), ref, image.PullOptions{
 				Username: username,
 				Password: password,

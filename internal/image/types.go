@@ -1,7 +1,25 @@
 // Package image provides cross-platform OCI image type definitions.
 package image
 
-import "strings"
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+)
+
+// StoreDir returns the platform image-store directory:
+// /var/lib/thrive/images on Linux, ~/.thrive/images elsewhere.
+func StoreDir() string {
+	if runtime.GOOS == "linux" {
+		return "/var/lib/thrive/images"
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".thrive", "images")
+}
 
 // SafeRef converts an image reference to a safe filesystem directory name.
 // Used on both macOS and Linux so virtiofs-shared images have matching paths.

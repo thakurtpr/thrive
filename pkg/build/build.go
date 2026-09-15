@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/thakurprasadrout/thrive/internal/runtime"
@@ -19,8 +20,8 @@ import (
 )
 
 type BuildOptions struct {
-	Tag       string
-	NoCache   bool
+	Tag        string
+	NoCache    bool
 	ContextDir string
 }
 
@@ -78,10 +79,33 @@ func Execute(ctx context.Context, graph *thrivefile.BuildGraph, opts BuildOption
 				// Run step inside a container using the build base image.
 				fmt.Printf("build: step %s — executing: %s\n", stepName, step.Run)
 				containerID := fmt.Sprintf("thrive-build-%s-%s", stepName, cacheKey[:8])
+				runCmd := step.Run
+				var mounts []runtime.Mount
+				if len(step.Copy) > 0 {
+					if opts.ContextDir == "" {
+						return fmt.Errorf("build.Execute: step %s has copy specs but no context dir", stepName)
+					}
+					mounts = append(mounts, runtime.Mount{
+						Source:      opts.ContextDir,
+						Destination: "/thrive-context",
+						Type:        "bind",
+						Options:     []string{"rbind"},
+					})
+					var copies []string
+					for _, cp := range step.Copy {
+						copies = append(copies, fmt.Sprintf("cp -r /thrive-context/%s %s", cp.Source, cp.Dest))
+					}
+					if runCmd == "" {
+						runCmd = strings.Join(copies, " && ")
+					} else {
+						runCmd = strings.Join(copies, " && ") + " && " + runCmd
+					}
+				}
 				cfg := runtime.ContainerConfig{
 					ID:      containerID,
 					Image:   graph.BaseImage,
-					Command: []string{"/bin/sh", "-c", step.Run},
+					Command: []string{"/bin/sh", "-c", runCmd},
+					Mounts:  mounts,
 				}
 
 				if _, err := runtime.Create(egCtx, cfg); err != nil {
@@ -123,7 +147,7 @@ func Execute(ctx context.Context, graph *thrivefile.BuildGraph, opts BuildOption
 
 	return &BuildResult{
 		ImageID: opts.Tag,
-		Steps:  len(graph.Steps),
+		Steps:   len(graph.Steps),
 	}, nil
 }
 

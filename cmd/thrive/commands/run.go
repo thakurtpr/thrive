@@ -16,6 +16,7 @@ import (
 
 	"github.com/thakurprasadrout/thrive/internal/image"
 	"github.com/thakurprasadrout/thrive/internal/runtime"
+	"github.com/thakurprasadrout/thrive/internal/volume"
 )
 
 func RunCmd() *cobra.Command {
@@ -66,6 +67,12 @@ func RunCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
+			mounts, err := parseVolumeSpecs(volumeSpecs)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error parsing volumes: %v\n", err)
+				os.Exit(1)
+			}
+
 			cfg := runtime.ContainerConfig{
 				ID:          containerID,
 				Image:       img.Ref,
@@ -73,7 +80,7 @@ func RunCmd() *cobra.Command {
 				Env:         envVars,
 				Secrets:     secretNames,
 				Ports:       ports,
-				Mounts:      parseVolumeSpecs(volumeSpecs),
+				Mounts:      mounts,
 				NetworkMode: netMode,
 				TTY:         tty,
 				Interactive: interactive || tty, // -t implies -i
@@ -227,7 +234,7 @@ func parsePortSpecs(specs []string) ([]runtime.PortMapping, error) {
 	return ports, nil
 }
 
-func parseVolumeSpecs(specs []string) []runtime.Mount {
+func parseVolumeSpecs(specs []string) ([]runtime.Mount, error) {
 	var mounts []runtime.Mount
 	for _, spec := range specs {
 		idx := indexByte(spec, ':')
@@ -235,14 +242,22 @@ func parseVolumeSpecs(specs []string) []runtime.Mount {
 			mounts = append(mounts, runtime.Mount{Source: spec, Destination: spec, Type: "bind"})
 			continue
 		}
+		src, dst := spec[:idx], spec[idx+1:]
+		if volume.IsNamedVolume(src) {
+			vol, err := volume.Ensure(src)
+			if err != nil {
+				return nil, fmt.Errorf("volume %q: %w", src, err)
+			}
+			src = vol.Path
+		}
 		mounts = append(mounts, runtime.Mount{
-			Source:      spec[:idx],
-			Destination: spec[idx+1:],
+			Source:      src,
+			Destination: dst,
 			Type:        "bind",
 			Options:     []string{"rbind"},
 		})
 	}
-	return mounts
+	return mounts, nil
 }
 
 func parsePort(s string) (int, error) {

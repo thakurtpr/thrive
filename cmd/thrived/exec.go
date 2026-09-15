@@ -22,9 +22,31 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/thakurprasadrout/thrive/internal/checkpoint"
+	"github.com/thakurprasadrout/thrive/internal/events"
 	"github.com/thakurprasadrout/thrive/internal/image"
+	"github.com/thakurprasadrout/thrive/internal/network"
+	"github.com/thakurprasadrout/thrive/internal/registry"
 	"github.com/thakurprasadrout/thrive/internal/runtime"
+	thrsystem "github.com/thakurprasadrout/thrive/internal/system"
+	"github.com/thakurprasadrout/thrive/internal/volume"
 )
+
+// checkpointRestoreBridge restores a container from a checkpoint.
+func checkpointRestoreBridge(ctx context.Context, id, name string) error {
+	return checkpoint.Restore(ctx, id, name)
+}
+
+// resolveVolumeSource maps a named volume to its host path, creating it
+// on demand. Bind paths pass through unchanged.
+func resolveVolumeSource(src string) string {
+	if volume.IsNamedVolume(src) {
+		if vol, err := volume.Ensure(src); err == nil {
+			return vol.Path
+		}
+	}
+	return src
+}
 
 func base64Decode(s string) ([]byte, error) {
 	return encb64.StdEncoding.DecodeString(s)
@@ -114,6 +136,140 @@ func dispatch(ctx context.Context, req *Request, w io.Writer) {
 		handleSystem(ctx, req, w)
 	case "cp":
 		handleCp(ctx, req, w)
+	case "create":
+		handleCreate(ctx, req, w)
+	case "pause":
+		handlePause(ctx, req, w)
+	case "unpause":
+		handleUnpause(ctx, req, w)
+	case "wait":
+		handleWait(ctx, req, w)
+	case "rename":
+		handleRename(ctx, req, w)
+	case "stats":
+		handleStats(ctx, req, w)
+	case "update":
+		handleUpdate(ctx, req, w)
+	case "top":
+		handleTop(ctx, req, w)
+	case "port":
+		handlePort(ctx, req, w)
+	case "diff":
+		handleDiff(ctx, req, w)
+	case "export":
+		handleExport(ctx, req, w)
+	case "commit":
+		handleCommit(ctx, req, w)
+	case "save":
+		handleSave(ctx, req, w)
+	case "load":
+		handleLoad(ctx, req, w)
+	case "import":
+		handleImport(ctx, req, w)
+	case "history":
+		handleHistory(ctx, req, w)
+	case "network-create":
+		handleNetworkCreate(ctx, req, w)
+	case "network-ls":
+		handleNetworkLs(ctx, req, w)
+	case "network-inspect":
+		handleNetworkInspect(ctx, req, w)
+	case "network-rm":
+		handleNetworkRm(ctx, req, w)
+	case "network-connect":
+		handleNetworkConnect(ctx, req, w)
+	case "network-disconnect":
+		handleNetworkDisconnect(ctx, req, w)
+	case "network-prune":
+		handleNetworkPrune(ctx, req, w)
+	case "volume-create":
+		handleVolumeCreate(ctx, req, w)
+	case "volume-ls":
+		handleVolumeLs(ctx, req, w)
+	case "volume-inspect":
+		handleVolumeInspect(ctx, req, w)
+	case "volume-rm":
+		handleVolumeRm(ctx, req, w)
+	case "volume-prune":
+		handleVolumePrune(ctx, req, w)
+	case "system-df":
+		handleSystemDf(ctx, req, w)
+	case "system-events":
+		handleSystemEvents(ctx, req, w)
+	case "system-prune":
+		handleSystemPrune(ctx, req, w)
+	case "compose_up":
+		handleComposeUp(ctx, req, w)
+	case "compose_down":
+		handleComposeDown(ctx, req, w)
+	case "compose_ps":
+		handleComposePs(ctx, req, w)
+	case "compose_logs":
+		handleComposeLogs(ctx, req, w)
+	case "compose_pull":
+		handleComposePull(ctx, req, w)
+	case "compose_config":
+		handleComposeConfig(ctx, req, w)
+	case "swarm-init":
+		handleSwarmInit(ctx, req, w)
+	case "swarm-join":
+		handleSwarmJoin(ctx, req, w)
+	case "swarm-leave":
+		handleSwarmLeave(ctx, req, w)
+	case "swarm-inspect":
+		handleSwarmInspect(ctx, req, w)
+	case "swarm-token":
+		handleSwarmToken(ctx, req, w)
+	case "service-create":
+		handleServiceCreate(ctx, req, w)
+	case "service-ls":
+		handleServiceLs(ctx, req, w)
+	case "service-inspect":
+		handleServiceInspect(ctx, req, w)
+	case "service-ps":
+		handleServicePs(ctx, req, w)
+	case "service-rm":
+		handleServiceRm(ctx, req, w)
+	case "service-scale":
+		handleServiceScale(ctx, req, w)
+	case "service-logs":
+		handleServiceLogs(ctx, req, w)
+	case "service-update":
+		handleServiceUpdate(ctx, req, w)
+	case "service-rollback":
+		handleServiceRollback(ctx, req, w)
+	case "stack-deploy":
+		handleStackDeploy(ctx, req, w)
+	case "stack-ls":
+		handleStackLs(ctx, req, w)
+	case "stack-ps":
+		handleStackPs(ctx, req, w)
+	case "stack-services":
+		handleStackServices(ctx, req, w)
+	case "stack-rm":
+		handleStackRm(ctx, req, w)
+	case "checkpoint-create":
+		handleCheckpointCreate(ctx, req, w)
+	case "checkpoint-ls":
+		handleCheckpointLs(ctx, req, w)
+	case "checkpoint-rm":
+		handleCheckpointRm(ctx, req, w)
+	case "plugin-install":
+		handlePluginInstall(ctx, req, w)
+	case "plugin-enable":
+		handlePluginEnable(ctx, req, w)
+	case "plugin-disable":
+		handlePluginDisable(ctx, req, w)
+	case "plugin-inspect":
+		handlePluginInspect(ctx, req, w)
+	case "plugin-ls":
+		handlePluginLs(ctx, req, w)
+	case "plugin-rm":
+		handlePluginRm(ctx, req, w)
+	case "buildx-du":
+		handleBuildxDu(ctx, req, w)
+	case "buildx-prune":
+		handleBuildxPrune(ctx, req, w)
 	case "ping":
 		writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"ok": true}})
 	default:
@@ -276,7 +432,9 @@ func handlePull(ctx context.Context, req *Request, w io.Writer) {
 	}
 	ref := req.Args[0]
 	log.Printf("thrived: pulling %s", ref)
-	img, err := image.Pull(ctx, ref, image.PullOptions{})
+	username, _ := req.Opts["username"].(string)
+	password, _ := req.Opts["password"].(string)
+	img, err := image.Pull(ctx, ref, image.PullOptions{Username: username, Password: password})
 	if err != nil {
 		sendError(w, req.ID, 1, fmt.Sprintf("pull %s: %v", ref, err))
 		return
@@ -350,6 +508,7 @@ func handleRun(ctx context.Context, req *Request, w io.Writer) {
 		for _, m := range mountsRaw {
 			if ms, ok := m.(string); ok {
 				src, dst := splitVolume(ms)
+				src = resolveVolumeSource(src)
 				mounts = append(mounts, runtime.Mount{
 					Source:      src,
 					Destination: dst,
@@ -375,13 +534,15 @@ func handleRun(ctx context.Context, req *Request, w io.Writer) {
 		containerID = generateID()
 	}
 
+	netMode, _ := req.Opts["network"].(string)
 	cfg := runtime.ContainerConfig{
-		ID:      containerID,
-		Image:   imageRef,
-		Command: cmd,
-		Env:     envVars,
-		Ports:   ports,
-		Mounts:  mounts,
+		ID:          containerID,
+		Image:       imageRef,
+		Command:     cmd,
+		Env:         envVars,
+		Ports:       ports,
+		Mounts:      mounts,
+		NetworkMode: netMode,
 	}
 
 	if _, err := runtime.Create(ctx, cfg); err != nil {
@@ -428,6 +589,9 @@ func handleLogs(ctx context.Context, req *Request, w io.Writer) {
 	if !follow {
 		// Single response — prevents stale EOF messages corrupting the bridge buffer
 		data, _ := io.ReadAll(f)
+		if n, ok := tailCount(req); ok {
+			data = lastLines(data, n)
+		}
 		writeResponse(w, &Response{
 			ID:     req.ID,
 			Result: map[string]any{"output": string(data)},
@@ -587,6 +751,15 @@ func handleStart(ctx context.Context, req *Request, w io.Writer) {
 	}
 	id := req.Args[0]
 
+	if checkpointName, _ := req.Opts["checkpoint"].(string); checkpointName != "" {
+		if err := checkpointRestoreBridge(ctx, id, checkpointName); err != nil {
+			sendError(w, req.ID, 1, err.Error())
+			return
+		}
+		writeResponse(w, &Response{ID: req.ID, Result: map[string]any{}})
+		return
+	}
+
 	containerDir := filepath.Join("/run/thrive/containers", id)
 	stateData, err := os.ReadFile(filepath.Join(containerDir, "state.json"))
 	if err != nil {
@@ -653,31 +826,49 @@ func handleRmi(ctx context.Context, req *Request, w io.Writer) {
 
 func handleInspect(ctx context.Context, req *Request, w io.Writer) {
 	if len(req.Args) < 1 {
-		sendError(w, req.ID, 1, "inspect requires container ID")
+		sendError(w, req.ID, 1, "inspect requires a container or image name")
 		return
 	}
 	id := req.Args[0]
 
-	state, err := runtime.State(ctx, id)
-	if err != nil {
-		sendError(w, req.ID, 1, fmt.Sprintf("container not found: %v", err))
+	if state, err := runtime.State(ctx, id); err == nil {
+		configPath := filepath.Join("/run/thrive/containers", id, "config.json")
+		configData, _ := os.ReadFile(configPath)
+		var cfg map[string]any
+		json.Unmarshal(configData, &cfg)
+
+		writeResponse(w, &Response{
+			ID: req.ID,
+			Result: map[string]any{
+				"type":   "container",
+				"id":     state.ID,
+				"status": state.Status,
+				"pid":    state.PID,
+				"config": cfg,
+			},
+		})
 		return
 	}
 
-	configPath := filepath.Join("/run/thrive/containers", id, "config.json")
-	configData, _ := os.ReadFile(configPath)
-	var cfg map[string]any
-	json.Unmarshal(configData, &cfg)
-
-	writeResponse(w, &Response{
-		ID: req.ID,
-		Result: map[string]any{
-			"id":     state.ID,
-			"status": state.Status,
-			"pid":    state.PID,
-			"config": cfg,
-		},
-	})
+	if imgs, err := image.List(ctx); err == nil {
+		for _, img := range imgs {
+			if img.Ref == id || img.Digest == id {
+				var layers []map[string]any
+				for _, l := range img.Layers {
+					layers = append(layers, map[string]any{"digest": l.Digest, "size": l.Size})
+				}
+				writeResponse(w, &Response{
+					ID: req.ID,
+					Result: map[string]any{
+						"type": "image", "ref": img.Ref,
+						"digest": img.Digest, "layers": layers,
+					},
+				})
+				return
+			}
+		}
+	}
+	sendError(w, req.ID, 1, fmt.Sprintf("no such container or image: %s", id))
 }
 
 func handleSystem(ctx context.Context, req *Request, w io.Writer) {
@@ -765,7 +956,20 @@ func handleCp(ctx context.Context, req *Request, w io.Writer) {
 	switch direction {
 	case "from":
 		srcPath, _ := req.Opts["src_path"].(string)
-		data, err := os.ReadFile(filepath.Join(mergedDir, srcPath))
+		full := filepath.Join(mergedDir, srcPath)
+		if st, err := os.Stat(full); err == nil && st.IsDir() {
+			var buf bytes.Buffer
+			if err := registry.TarDirectory(full, &buf); err != nil {
+				sendError(w, req.ID, 1, fmt.Sprintf("cp from: tar: %v", err))
+				return
+			}
+			writeResponse(w, &Response{
+				ID:     req.ID,
+				Result: map[string]any{"data": encb64.StdEncoding.EncodeToString(buf.Bytes()), "tar": true},
+			})
+			return
+		}
+		data, err := os.ReadFile(full)
 		if err != nil {
 			sendError(w, req.ID, 1, fmt.Sprintf("cp from: %v", err))
 			return
@@ -783,6 +987,18 @@ func handleCp(ctx context.Context, req *Request, w io.Writer) {
 			return
 		}
 		target := filepath.Join(mergedDir, dstPath)
+		if isTar, _ := req.Opts["tar"].(bool); isTar {
+			if err := os.MkdirAll(target, 0755); err != nil {
+				sendError(w, req.ID, 1, fmt.Sprintf("cp to: mkdir: %v", err))
+				return
+			}
+			if err := registry.ExtractArchive(bytes.NewReader(fileData), target); err != nil {
+				sendError(w, req.ID, 1, fmt.Sprintf("cp to: extract: %v", err))
+				return
+			}
+			writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"ok": true}})
+			return
+		}
 		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 			sendError(w, req.ID, 1, fmt.Sprintf("cp to: mkdir: %v", err))
 			return
@@ -800,3 +1016,657 @@ func handleCp(ctx context.Context, req *Request, w io.Writer) {
 type discardWriter struct{}
 
 func (discardWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+func handleCreate(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "create requires image argument")
+		return
+	}
+	imageRef := req.Args[0]
+	cmdArgs := req.Args[1:]
+	imgPath := "/var/lib/thrive/images/" + image.SafeRef(imageRef) + "/manifest.json"
+	if _, err := os.Stat(imgPath); os.IsNotExist(err) {
+		if _, pullErr := image.Pull(ctx, imageRef, image.PullOptions{}); pullErr != nil {
+			sendError(w, req.ID, 1, fmt.Sprintf("image %s not found: %v", imageRef, pullErr))
+			return
+		}
+	}
+	name, _ := req.Opts["name"].(string)
+	containerID := name
+	if containerID == "" {
+		containerID = generateID()
+	}
+	var envVars []string
+	if envRaw, ok := req.Opts["env"].([]any); ok {
+		for _, e := range envRaw {
+			if s, ok := e.(string); ok {
+				envVars = append(envVars, s)
+			}
+		}
+	}
+	cfg := runtime.ContainerConfig{ID: containerID, Image: imageRef, Command: cmdArgs, Env: envVars}
+	if _, err := runtime.Create(ctx, cfg); err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"container_id": containerID}})
+}
+
+func handlePause(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "pause requires container ID")
+		return
+	}
+	if err := runtime.Pause(ctx, req.Args[0]); err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{}})
+}
+
+func handleUnpause(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "unpause requires container ID")
+		return
+	}
+	if err := runtime.Unpause(ctx, req.Args[0]); err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{}})
+}
+
+func handleWait(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "wait requires container ID")
+		return
+	}
+	code, err := runtime.Wait(ctx, req.Args[0])
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"exit_code": code}})
+}
+
+func handleRename(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 2 {
+		sendError(w, req.ID, 1, "rename requires old and new IDs")
+		return
+	}
+	if err := runtime.Rename(ctx, req.Args[0], req.Args[1]); err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{}})
+}
+
+func handleStats(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "stats requires container ID")
+		return
+	}
+	s, err := runtime.Stats(ctx, req.Args[0])
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{
+		"id": s.ID, "status": s.Status, "pid": s.PID,
+		"memory_current": s.MemoryCurrent, "memory_limit": s.MemoryLimit,
+		"cpu_usage_usec": s.CPUUsageUsec, "pids_current": s.PIDsCurrent,
+		"frozen": s.Frozen,
+	}})
+}
+
+func handleUpdate(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "update requires container ID")
+		return
+	}
+	var opts runtime.UpdateOptions
+	if v, ok := req.Opts["memory"].(string); ok && v != "" {
+		opts.MemoryLimit = parseMemoryOpt(v)
+	}
+	if v, ok := req.Opts["cpu_quota"].(float64); ok {
+		opts.CPUQuota = int64(v)
+	}
+	if v, ok := req.Opts["cpu_shares"].(float64); ok {
+		opts.CPUShares = int64(v)
+	}
+	if v, ok := req.Opts["pids_limit"].(float64); ok {
+		opts.PIDsLimit = int64(v)
+	}
+	if err := runtime.Update(ctx, req.Args[0], opts); err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{}})
+}
+
+func handleTop(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "top requires container ID")
+		return
+	}
+	procs, err := runtime.Top(ctx, req.Args[0])
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	var out []map[string]any
+	for _, p := range procs {
+		out = append(out, map[string]any{"pid": p.PID, "ppid": p.PPID, "cmd": p.Cmd})
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"processes": out}})
+}
+
+func handlePort(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "port requires container ID")
+		return
+	}
+	ports, err := runtime.ContainerPorts(ctx, req.Args[0])
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	var out []map[string]any
+	for _, pm := range ports {
+		out = append(out, map[string]any{
+			"host_port": pm.HostPort, "container_port": pm.ContainerPort, "protocol": pm.Protocol,
+		})
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"ports": out}})
+}
+
+func handleDiff(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "diff requires container ID")
+		return
+	}
+	changes, err := runtime.Diff(ctx, req.Args[0])
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	var out []map[string]any
+	for _, c := range changes {
+		out = append(out, map[string]any{"kind": c.Kind, "path": c.Path})
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"changes": out}})
+}
+
+func handleExport(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "export requires container ID")
+		return
+	}
+	var buf bytes.Buffer
+	if err := runtime.Export(ctx, req.Args[0], &buf); err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{
+		"data": encb64.StdEncoding.EncodeToString(buf.Bytes()),
+	}})
+}
+
+func handleCommit(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 2 {
+		sendError(w, req.ID, 1, "commit requires container ID and image ref")
+		return
+	}
+	if err := runtime.Commit(ctx, req.Args[0], req.Args[1]); err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"ref": req.Args[1]}})
+}
+
+func handleSave(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "save requires at least one image")
+		return
+	}
+	var buf bytes.Buffer
+	if err := registry.SaveTo(ctx, image.StoreDir(), req.Args, &buf); err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{
+		"data": encb64.StdEncoding.EncodeToString(buf.Bytes()),
+	}})
+}
+
+func handleLoad(ctx context.Context, req *Request, w io.Writer) {
+	encoded, _ := req.Opts["data"].(string)
+	raw, err := base64Decode(encoded)
+	if err != nil {
+		sendError(w, req.ID, 1, fmt.Sprintf("load: decode: %v", err))
+		return
+	}
+	loaded, err := registry.LoadFrom(ctx, image.StoreDir(), bytes.NewReader(raw))
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	var refs []any
+	for _, r := range loaded {
+		refs = append(refs, r)
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"images": refs}})
+}
+
+func handleImport(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "import requires an image reference")
+		return
+	}
+	encoded, _ := req.Opts["data"].(string)
+	raw, err := base64Decode(encoded)
+	if err != nil {
+		sendError(w, req.ID, 1, fmt.Sprintf("import: decode: %v", err))
+		return
+	}
+	if err := registry.ImportTo(ctx, image.StoreDir(), bytes.NewReader(raw), req.Args[0]); err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"ref": req.Args[0]}})
+}
+
+func handleHistory(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "history requires an image reference")
+		return
+	}
+	layers, err := registry.HistoryTo(ctx, image.StoreDir(), req.Args[0])
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	var out []map[string]any
+	for _, l := range layers {
+		out = append(out, map[string]any{"digest": l.Digest, "size": l.Size})
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"layers": out}})
+}
+
+func handleNetworkCreate(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "network create requires a name")
+		return
+	}
+	driver, _ := req.Opts["driver"].(string)
+	subnet, _ := req.Opts["subnet"].(string)
+	nw, err := network.CreateNetwork(req.Args[0], driver, subnet)
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"name": nw.Name, "subnet": nw.Subnet}})
+}
+
+func handleNetworkLs(ctx context.Context, req *Request, w io.Writer) {
+	nets, err := network.ListNetworks()
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	var out []map[string]any
+	for _, nw := range nets {
+		out = append(out, map[string]any{
+			"name": nw.Name, "driver": nw.Driver,
+			"subnet": nw.Subnet, "containers": len(nw.Containers),
+		})
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"networks": out}})
+}
+
+func handleNetworkInspect(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "network inspect requires a name")
+		return
+	}
+	nw, err := network.InspectNetwork(req.Args[0])
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{
+		"name": nw.Name, "driver": nw.Driver, "subnet": nw.Subnet,
+		"gateway": nw.Gateway, "bridge": nw.Bridge, "containers": nw.Containers,
+	}})
+}
+
+func handleNetworkRm(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "network rm requires a name")
+		return
+	}
+	force, _ := req.Opts["force"].(bool)
+	for _, name := range req.Args {
+		if err := network.RemoveNetwork(name, force); err != nil {
+			sendError(w, req.ID, 1, err.Error())
+			return
+		}
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{}})
+}
+
+func handleNetworkConnect(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 2 {
+		sendError(w, req.ID, 1, "network connect requires network and container")
+		return
+	}
+	networkName, containerID := req.Args[0], req.Args[1]
+	if _, err := network.InspectNetwork(networkName); err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	state, err := runtime.State(ctx, containerID)
+	if err != nil {
+		sendError(w, req.ID, 1, fmt.Sprintf("container not found: %v", err))
+		return
+	}
+	if state.Status != "running" {
+		if err := runtime.AddPendingNetwork(containerID, networkName); err != nil {
+			sendError(w, req.ID, 1, err.Error())
+			return
+		}
+		if err := network.ConnectNetwork(containerID, networkName); err != nil {
+			sendError(w, req.ID, 1, err.Error())
+			return
+		}
+		writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"pending": true}})
+		return
+	}
+	nw, _ := network.InspectNetwork(networkName)
+	iface := fmt.Sprintf("eth%d", len(network.Attachments(containerID)))
+	if err := network.EnsureBridgeWith(nw.Bridge, nw.Gateway+"/16"); err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	veth, err := network.SetupVethOn(nw, containerID, state.PID, iface)
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	if err := network.ConnectNetwork(containerID, networkName); err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	network.RecordAttachment(containerID, network.Attachment{
+		Network: nw.Name, HostVeth: veth.Host,
+		Interface: iface, ContainerIP: veth.ContainerIP,
+	})
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"ip": veth.ContainerIP}})
+}
+
+func handleNetworkDisconnect(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 2 {
+		sendError(w, req.ID, 1, "network disconnect requires network and container")
+		return
+	}
+	networkName, containerID := req.Args[0], req.Args[1]
+	force, _ := req.Opts["force"].(bool)
+	state, err := runtime.State(ctx, containerID)
+	if err != nil {
+		sendError(w, req.ID, 1, fmt.Sprintf("container not found: %v", err))
+		return
+	}
+	if state.Status == "running" && !force {
+		for _, a := range network.Attachments(containerID) {
+			if a.Network == networkName && a.Interface == "eth0" {
+				sendError(w, req.ID, 1, "cannot disconnect primary network without --force")
+				return
+			}
+		}
+	}
+	nw, err := network.InspectNetwork(networkName)
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	for _, a := range network.Attachments(containerID) {
+		if a.Network == networkName {
+			network.TeardownVethOn(nw, containerID, a.HostVeth)
+		}
+	}
+	var remaining []network.Attachment
+	for _, a := range network.Attachments(containerID) {
+		if a.Network != networkName {
+			remaining = append(remaining, a)
+		}
+	}
+	network.ClearAttachments(containerID)
+	for _, a := range remaining {
+		network.RecordAttachment(containerID, a)
+	}
+	if err := network.DisconnectNetwork(containerID, networkName); err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{}})
+}
+
+func handleNetworkPrune(ctx context.Context, req *Request, w io.Writer) {
+	removed, err := network.PruneNetworks()
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"removed": len(removed)}})
+}
+
+func daemonVolumeInUse(path string) bool {
+	entries, err := os.ReadDir("/run/thrive/containers")
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join("/run/thrive/containers", e.Name(), "config.json"))
+		if err != nil {
+			continue
+		}
+		var cfg runtime.ContainerConfig
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			continue
+		}
+		for _, m := range cfg.Mounts {
+			if m.Source == path {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func handleVolumeCreate(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "volume create requires a name")
+		return
+	}
+	v, err := volume.Create(req.Args[0])
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"name": v.Name, "path": v.Path}})
+}
+
+func handleVolumeLs(ctx context.Context, req *Request, w io.Writer) {
+	vols, err := volume.List()
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	var out []map[string]any
+	for _, v := range vols {
+		out = append(out, map[string]any{"name": v.Name, "path": v.Path})
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"volumes": out}})
+}
+
+func handleVolumeInspect(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "volume inspect requires a name")
+		return
+	}
+	v, err := volume.Inspect(req.Args[0])
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"name": v.Name, "path": v.Path}})
+}
+
+func handleVolumeRm(ctx context.Context, req *Request, w io.Writer) {
+	if len(req.Args) < 1 {
+		sendError(w, req.ID, 1, "volume rm requires a name")
+		return
+	}
+	force, _ := req.Opts["force"].(bool)
+	for _, name := range req.Args {
+		if err := volume.Remove(name, force, daemonVolumeInUse); err != nil {
+			sendError(w, req.ID, 1, err.Error())
+			return
+		}
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{}})
+}
+
+func handleVolumePrune(ctx context.Context, req *Request, w io.Writer) {
+	removed, err := volume.Prune(daemonVolumeInUse)
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"removed": len(removed)}})
+}
+
+func handleSystemDf(ctx context.Context, req *Request, w io.Writer) {
+	u, err := thrsystem.DiskUsage()
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{
+		"images":     map[string]any{"total": u.Images.Total, "active": u.Images.Active, "size": u.Images.Size, "reclaimable": u.Images.Reclaimable},
+		"containers": map[string]any{"total": u.Containers.Total, "active": u.Containers.Active, "size": u.Containers.Size, "reclaimable": u.Containers.Reclaimable},
+		"volumes":    map[string]any{"total": u.Volumes.Total, "active": u.Volumes.Active, "size": u.Volumes.Size, "reclaimable": u.Volumes.Reclaimable},
+		"networks":   map[string]any{"total": u.Networks.Total, "active": u.Networks.Active},
+		"buildCache": map[string]any{"size": u.BuildCache.Size, "reclaimable": u.BuildCache.Reclaimable},
+	}})
+}
+
+func handleSystemEvents(ctx context.Context, req *Request, w io.Writer) {
+	var filter events.Filter
+	now := time.Now().UTC()
+	if s, _ := req.Opts["since"].(string); s != "" {
+		if t, err := parseEventTimeOpt(s, now); err == nil {
+			filter.Since = t
+		}
+	}
+	if s, _ := req.Opts["until"].(string); s != "" {
+		if t, err := parseEventTimeOpt(s, now); err == nil {
+			filter.Until = t
+		}
+	}
+	if s, _ := req.Opts["filter"].(string); s != "" {
+		filter.Type = strings.TrimPrefix(strings.TrimPrefix(s, "type="), "event=")
+	}
+	list, err := events.Query(filter)
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	var out []map[string]any
+	for _, e := range list {
+		out = append(out, map[string]any{
+			"time": e.Time.Format(time.RFC3339), "type": e.Type,
+			"action": e.Action, "actor": e.Actor, "attributes": e.Attributes,
+		})
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"events": out}})
+}
+
+func handleSystemPrune(ctx context.Context, req *Request, w io.Writer) {
+	all, _ := req.Opts["all"].(bool)
+	volumes, _ := req.Opts["volumes"].(bool)
+	rep, err := thrsystem.Prune(thrsystem.PruneOptions{AllImages: all, Volumes: volumes})
+	if err != nil {
+		sendError(w, req.ID, 1, err.Error())
+		return
+	}
+	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{
+		"containersDeleted": rep.ContainersDeleted, "imagesDeleted": rep.ImagesDeleted,
+		"volumesDeleted": rep.VolumesDeleted, "networksDeleted": rep.NetworksDeleted,
+		"spaceReclaimed": rep.SpaceReclaimed,
+	}})
+}
+
+func parseEventTimeOpt(s string, now time.Time) (time.Time, error) {
+	if d, err := time.ParseDuration(s); err == nil {
+		return now.Add(-d), nil
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return time.Unix(n, 0).UTC(), nil
+	}
+	return time.Time{}, fmt.Errorf("unrecognized time %q", s)
+}
+
+// tailCount extracts an optional --tail line count from the request.
+func tailCount(req *Request) (int, bool) {
+	switch v := req.Opts["tail"].(type) {
+	case float64:
+		if v > 0 {
+			return int(v), true
+		}
+	case int:
+		if v > 0 {
+			return v, true
+		}
+	}
+	return 0, false
+}
+
+// lastLines returns the last n lines of data.
+func lastLines(data []byte, n int) []byte {
+	s := strings.TrimRight(string(data), "\n")
+	if s == "" {
+		return data
+	}
+	lines := strings.Split(s, "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return []byte(strings.Join(lines, "\n") + "\n")
+}
+
+func parseMemoryOpt(s string) int64 {
+	s = strings.TrimSpace(strings.ToLower(s))
+	mult := int64(1)
+	for _, suf := range []struct {
+		suf string
+		m   int64
+	}{{"gb", 1 << 30}, {"g", 1 << 30}, {"mb", 1 << 20}, {"m", 1 << 20}, {"kb", 1 << 10}, {"k", 1 << 10}, {"b", 1}} {
+		if strings.HasSuffix(s, suf.suf) {
+			mult = suf.m
+			s = strings.TrimSuffix(s, suf.suf)
+			break
+		}
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n * mult
+}

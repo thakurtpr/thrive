@@ -59,3 +59,54 @@ func (m *Manager) Remove() error {
 	}
 	return nil
 }
+
+// Freeze pauses all processes in the container's cgroup (cgroup v2 freezer).
+func (m *Manager) Freeze() error {
+	freezeFile := filepath.Join(m.cgroupDir, "cgroup.freeze")
+	if err := os.WriteFile(freezeFile, []byte("1"), 0644); err != nil {
+		return fmt.Errorf("cgroup.Freeze: write %s: %w", freezeFile, err)
+	}
+	return nil
+}
+
+// Unfreeze resumes all processes in the container's cgroup.
+func (m *Manager) Unfreeze() error {
+	freezeFile := filepath.Join(m.cgroupDir, "cgroup.freeze")
+	if err := os.WriteFile(freezeFile, []byte("0"), 0644); err != nil {
+		return fmt.Errorf("cgroup.Unfreeze: write %s: %w", freezeFile, err)
+	}
+	return nil
+}
+
+// SetCPUShares sets CPU weight (cgroup v2 cpu.weight, range 1-10000).
+// Docker --cpu-shares (default 1024) maps linearly onto cpu.weight (default 100).
+func (m *Manager) SetCPUShares(shares int64) error {
+	if shares <= 0 {
+		return nil
+	}
+	weight := shares * 100 / 1024
+	if weight < 1 {
+		weight = 1
+	}
+	if weight > 10000 {
+		weight = 10000
+	}
+	weightFile := filepath.Join(m.cgroupDir, "cpu.weight")
+	if err := os.WriteFile(weightFile, []byte(fmt.Sprintf("%d", weight)), 0644); err != nil {
+		return fmt.Errorf("cgroup.SetCPUShares: write %s: %w", weightFile, err)
+	}
+	return nil
+}
+
+// SetPIDsLimit sets the maximum number of processes (cgroup v2 pids.max).
+func (m *Manager) SetPIDsLimit(limit int64) error {
+	pidsFile := filepath.Join(m.cgroupDir, "pids.max")
+	val := "max"
+	if limit > 0 {
+		val = fmt.Sprintf("%d", limit)
+	}
+	if err := os.WriteFile(pidsFile, []byte(val), 0644); err != nil {
+		return fmt.Errorf("cgroup.SetPIDsLimit: write %s: %w", pidsFile, err)
+	}
+	return nil
+}

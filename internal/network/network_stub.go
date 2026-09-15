@@ -31,16 +31,22 @@ type CNIPortMapping struct {
 	HostIP        string
 }
 
-func EnsureBridge() error                                                       { return ErrNotLinux }
-func DeleteBridge() error                                                       { return ErrNotLinux }
-func WriteResolvConf(_ string) error                                            { return ErrNotLinux }
-func SetupVeth(_ string, _ int) (*VethPair, error)                              { return nil, ErrNotLinux }
-func TeardownVeth(_ string)                                                     {}
-func AddPortForward(_ string, _, _ int, _ string) error                         { return ErrNotLinux }
-func RemovePortForward(_ string, _, _ int, _ string)                            {}
-func PublishPort(_, _ int, _ string) error                                      { return ErrNotLinux }
-func UnpublishPort(_, _ int)                                                    {}
-func SetupContainer(_ string, _ int, _ string, _ []PortMapping) (string, error) { return "", ErrNotLinux }
-func TeardownContainer(_ string, _ string, _ []PortMapping)                     {}
-func CNISetup(_ string, _ string, _ []CNIPortMapping) (string, error)           { return "", ErrNotLinux }
-func CNITeardown(_ string, _ string) error                                      { return ErrNotLinux }
+func EnsureBridge() error                                                  { return ErrNotLinux }
+func EnsureBridgeWith(_, _ string) error                                   { return ErrNotLinux }
+func DeleteBridge() error                                                  { return ErrNotLinux }
+func DeleteBridgeWith(_ string) error                                      { return ErrNotLinux }
+func WriteResolvConf(_ string) error                                       { return ErrNotLinux }
+func SetupVeth(_ string, _ int) (*VethPair, error)                         { return nil, ErrNotLinux }
+func SetupVethOn(_ *Network, _ string, _ int, _ string) (*VethPair, error) { return nil, ErrNotLinux }
+func TeardownVeth(_ string)                                                {}
+func TeardownVethOn(_ *Network, _ string, _ string)                        {}
+func AddPortForward(_ string, _, _ int, _ string) error                    { return ErrNotLinux }
+func RemovePortForward(_ string, _, _ int, _ string)                       {}
+func PublishPort(_, _ int, _ string) error                                 { return ErrNotLinux }
+func UnpublishPort(_, _ int)                                               {}
+func SetupContainer(_ string, _ int, _ string, _ []PortMapping) (string, error) {
+	return "", ErrNotLinux
+}
+func TeardownContainer(_ string, _ string, _ []PortMapping)           {}
+func CNISetup(_ string, _ string, _ []CNIPortMapping) (string, error) { return "", ErrNotLinux }
+func CNITeardown(_ string, _ string) error                            { return ErrNotLinux }

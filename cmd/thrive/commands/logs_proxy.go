@@ -20,7 +20,11 @@ func LogsCmd() *cobra.Command {
 			ctx := cmd.Context()
 			containerID := args[0]
 			follow, _ := cmd.Flags().GetBool("follow")
+			tail, _ := cmd.Flags().GetInt("tail")
 			opts := map[string]any{"follow": follow}
+			if tail > 0 {
+				opts["tail"] = tail
+			}
 
 			if follow {
 				return vm.DialControlStream(ctx, "logs", []string{containerID}, opts, os.Stdout)
@@ -45,5 +49,6 @@ func LogsCmd() *cobra.Command {
 	}
 
 	logs.Flags().BoolP("follow", "f", false, "Follow log output")
+	logs.Flags().Int("tail", 0, "Number of lines to show from the end of the logs (0 = all)")
 	return logs
 }

@@ -20,23 +20,43 @@ type VethPair struct {
 // thrive0, moves the container end into the container's netns, and assigns
 // an IP from the 172.18.0.0/16 subnet.
 func SetupVeth(containerID string, pid int) (*VethPair, error) {
+	def := defaultNetwork
+	def.Name = "bridge"
+	return SetupVethOn(&def, containerID, pid, "eth0")
+}
+
+// SetupVethOn attaches a container to a named network on the given interface
+// (eth0 for primary, eth1+ for additional attachments).
+func SetupVethOn(nw *Network, containerID string, pid int, ifName string) (*VethPair, error) {
 	short := containerID
 	if len(short) > 8 {
 		short = short[:8]
 	}
 	hostVeth := "veth-" + short
-	ctrVeth := "eth0"
+	if nw.Name != "bridge" {
+		suffix := nw.Bridge
+		if len(suffix) > 4 {
+			suffix = suffix[len(suffix)-4:]
+		}
+		hostVeth = "v-" + short + "-" + suffix
+	}
 
-	ip, err := allocateIP(containerID)
+	var ip string
+	var err error
+	if nw.Name == "bridge" {
+		ip, err = allocateIP(containerID)
+	} else {
+		ip, err = AllocateOn(nw, containerID)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("network.SetupVeth: allocate IP: %w", err)
 	}
 
 	cmds := [][]string{
-		{"ip", "link", "add", hostVeth, "type", "veth", "peer", "name", ctrVeth},
-		{"ip", "link", "set", hostVeth, "master", BridgeName},
+		{"ip", "link", "add", hostVeth, "type", "veth", "peer", "name", ifName},
+		{"ip", "link", "set", hostVeth, "master", nw.Bridge},
 		{"ip", "link", "set", hostVeth, "up"},
-		{"ip", "link", "set", ctrVeth, "netns", strconv.Itoa(pid)},
+		{"ip", "link", "set", ifName, "netns", strconv.Itoa(pid)},
 	}
 	for _, args := range cmds {
 		if out, err := run(args...); err != nil {
@@ -48,9 +68,11 @@ func SetupVeth(containerID string, pid int) (*VethPair, error) {
 	ns := []string{"nsenter", "--target", strconv.Itoa(pid), "--net", "--"}
 	netCmds := [][]string{
 		append(ns, "ip", "link", "set", "lo", "up"),
-		append(ns, "ip", "link", "set", ctrVeth, "up"),
-		append(ns, "ip", "addr", "add", ip+"/16", "dev", ctrVeth),
-		append(ns, "ip", "route", "add", "default", "via", "172.18.0.1"),
+		append(ns, "ip", "link", "set", ifName, "up"),
+		append(ns, "ip", "addr", "add", ip+"/16", "dev", ifName),
+	}
+	if ifName == "eth0" {
+		netCmds = append(netCmds, append(ns, "ip", "route", "add", "default", "via", nw.Gateway))
 	}
 	for _, args := range netCmds {
 		if out, err := run(args...); err != nil {
@@ -60,7 +82,7 @@ func SetupVeth(containerID string, pid int) (*VethPair, error) {
 
 	return &VethPair{
 		Host:        hostVeth,
-		Container:   ctrVeth,
+		Container:   ifName,
 		ContainerIP: ip,
 	}, nil
 }
@@ -73,6 +95,23 @@ func TeardownVeth(containerID string) {
 	}
 	run("ip", "link", "delete", "veth-"+short) // best-effort
 	releaseIP(containerID)
+}
+
+// TeardownVethOn removes a named-network attachment's host veth and IP.
+func TeardownVethOn(nw *Network, containerID, hostVeth string) {
+	if hostVeth == "" {
+		short := containerID
+		if len(short) > 8 {
+			short = short[:8]
+		}
+		hostVeth = "veth-" + short
+	}
+	run("ip", "link", "delete", hostVeth) // best-effort
+	if nw != nil && nw.Name != "bridge" {
+		ReleaseOn(nw, containerID)
+	} else {
+		releaseIP(containerID)
+	}
 }
 
 // AddPortForward wires iptables DNAT rules so hostPort → containerIP:containerPort.

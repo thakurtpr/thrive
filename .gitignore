@@ -39,6 +39,9 @@ Thumbs.db
 thrive-vm-darwin-*.tar.gz
 thrive-vm-cmdline
 
+# OpenCode project overrides (local-only, never commit)
+.opencode/opencode.jsonc
+
 # Test binary artifacts
 lazypull.test
 image.test

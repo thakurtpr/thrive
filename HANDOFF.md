@@ -1,7 +1,217 @@
 # THRIVE — HANDOFF
 
 ## Last updated
-2026-05-21T09:30:00Z
+2026-09-15T18:00:00Z
+
+---
+
+## Session 2026-09-15 — Phase F: Coverage + Gates (program complete)
+
+### What was done
+Closed test gaps for all new code, ran race/lint gates, refreshed stale docs.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | Hermetic cgroup tests (freeze/shares/pids/stats via temp dirs) | `internal/cgroup/cgroup_extra_test.go` (5 tests) |
+| 2 | Runtime error-path additions (update/ports/rename) | `internal/runtime/lifecycle_test.go` (+3) |
+| 3 | Network pure-helper tests (names/bridges/subnets/builtin) | `internal/network/nets_test.go` (+4) |
+| 4 | Compose engine tests (filter/IDs/config/build/ops) | `pkg/compose/compose_extra_test.go` (7 tests) |
+| 5 | Linux CLI structure tests (all Phase A–E commands, memory/scale parsing) | `cmd/.../commands_phase_test.go` (6 tests) |
+| 6 | Lint hygiene in new code (errcheck nolints, TypeReg, explicit closes, isNameChar) | registry, events, compose-daemon, cp, inspect, validName x4 |
+| 7 | Refreshed stale TDD_PROGRESS.md (was frozen at May ~35%) | `TDD_PROGRESS.md` |
+
+### Gates (all on this Mac unless noted)
+- `GOOS=linux go build ./...`, host, `GOOS=windows` — CLEAN
+- `GOOS=linux go vet ./...` — CLEAN
+- `go test ./...` — zero failures
+- `-race` on events/registry/volume/network/buildx/contextstore — PASS
+- Measured coverage: volume 82%, contextstore 78%, buildx 76%, network 61%, events/registry 55%, commands 22%
+- golangci-lint v2 (repo config is v1-era; ran --no-config): new code clean; pre-existing findings untouched
+- `GOOS=linux go test -c` compiles for all linux suites (authoritative run happens in CI)
+
+### Overall
+Coverage ~35% → ~60% (portable measured; Linux CI gives the final number).
+Docker surface: every functional area implemented; deliberate single-node/native-only limits documented with explicit errors (swarm join, cross-arch, remote build contexts, plugin hooks, CRIU, cosign).
+Work is UNCOMMITTED in `projects-for-resume/thrive-full/` (31 modified, ~40 new files) — commit/PR on request.
+
+---
+
+## Session 2026-09-15 — Phase E: Compose/Swarm/Buildx/Context/Plugin/Checkpoint
+
+### What was done
+Final functional gaps closed: full compose ops, single-node swarm, buildx,
+contexts, plugins, checkpoints. Linux native; macOS/Windows via daemon
+proxies except where the host lacks the data (build contexts).
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | Compose engine: build: section (string+map), networks/volumes wiring, named-volume ensure, Build/Pull/Stop/Start/Kill/Restart/Rm/Config, --scale replicas, prefix-scan Ps/Down | `pkg/compose/compose.go` |
+| 2 | Compose CLI: build/exec/kill/restart/stop/start/config/pull/rm, up --scale/--build | `cmd/.../compose.go`, `compose_stub.go` (proxy: service ops via bridge, build honestly requires Linux) |
+| 3 | Daemon compose-up/down/ps/logs/pull/config handlers | `cmd/thrived/compose.go` (new) |
+| 4 | Single-node swarm: init/leave/inspect/join-token(+rotate); join refuses multi-node explicitly | `internal/swarm/swarm.go` (new, 5 tests) |
+| 5 | Services: create/ls/inspect/ps/rm/scale/logs, rolling update/rollback, reconcile | `internal/swarm/service.go` (new) |
+| 6 | Stacks: deploy(compose)/ls/ps/services/rm | `internal/swarm/stack.go` (new) |
+| 7 | Swarm/service/stack CLI + proxies + 20 daemon handlers | `swarm.go service.go stack.go`, `swarm_proxy.go`, `thrived/swarm.go` |
+| 8 | buildx: native build/bake/builders/du/prune; cross-arch honestly refused; builder records portable | `internal/buildx/` (new, 2 tests), `buildx.go`, proxy, daemon du/prune |
+| 9 | Contexts: portable records, full CRUD + use (native everywhere) | `internal/contextstore/` (new, 1 test), `context.go` |
+| 10 | Plugins: install/enable/disable/inspect/ls/rm (management plane) | `internal/plugin/` (new, 2 tests), `plugin.go`, proxy, daemon |
+| 11 | Checkpoints: CRIU-gated create/ls/rm/restore; `start --checkpoint` (CLI+proxy+daemon) | `internal/checkpoint/` (new, 3 tests), `checkpoint.go`, `start*.go` |
+
+### Verification
+- 3-platform builds + vet CLEAN
+- Portable suites PASS: buildx, contextstore, events, registry, volume, network, commands (incl. Phase E proxy structure)
+- Linux compile-checked: swarm/plugin/checkpoint/compose/thrived/runtime
+
+### Honest scope notes (documented in code, not silent)
+- Swarm is single-node: `join` errors explicitly; no Raft/overlay mesh
+- buildx `--platform` must be native (no QEMU cross-arch)
+- compose/buildx build on macOS/Windows refused (contexts not synced to VM)
+- Plugins are management-plane records (no container-lifecycle hooks yet)
+- Checkpoints require the `criu` binary (clear error otherwise)
+- Signing stays thrive-native Ed25519 (Sigstore/cosign interop out of scope)
+
+### Next (Phase F)
+Coverage 35%→70% + CI gates: image/lazypull/runtime/p2p tests, race, lint.
+
+---
+
+## Session 2026-09-15 — Phase D: System/Build Parity (df/events/prune, Dockerfile, cp/inspect/logs)
+
+### What was done
+Event bus + system operations + Dockerfile builds + cp/inspect/logs upgrades.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | Event bus: append/query/filter/follow/JSON (portable, platform-aware path) | `internal/events/events.go` (new, 5 tests) |
+| 2 | Emission: container create/start/kill/die/destroy, image pull/push (linux+darwin), network/volume create/destroy/connect/disconnect | `runtime.go`, `image.go`, `image_darwin.go`, `nets.go`, `volume.go` |
+| 3 | `system df` (sizes/reclaimable), `system prune` (-a/--volumes/-f, byte-counted), `system events` (--since/--until/--filter/--follow/--format) | `internal/system/system.go` (new), `cmd/.../system_extra.go`, `system_proxy.go`, `main.go` |
+| 4 | thrived: system-df/events/prune handlers | `cmd/thrived/exec.go` |
+| 5 | Dockerfile→BuildGraph (FROM/RUN/COPY/ADD/ENV/WORKDIR/CMD/ENTRYPOINT/ARG + substitution, warnings, multi-stage final-only) | `pkg/dockerfile/dockerfile.go` (new, 6 tests verified) |
+| 6 | Engine COPY support (context mount + cp); `build --file/-f/--build-arg/--no-cache`, dir/file detect + FROM sniffing | `pkg/build/build.go`, `cmd/.../buildpushpull.go` |
+| 7 | `cp` recursive dirs (native + tar-over-bridge for VM) | `cp.go`, `cp_proxy.go`, daemon `handleCp` |
+| 8 | `inspect` container→image fallback + `--format` Go templates (shared helper) | `inspect*.go`, daemon `handleInspect` |
+| 9 | `logs --tail N` (native + bridge) | `logs.go`, `logs_proxy.go`, daemon `handleLogs` |
+
+### Verification
+- 3-platform builds + vet CLEAN; gofmt clean on all touched files
+- `go test`: events 5/5, registry 11/11, volume, network, commands (incl. renderFormat 3/3 + proxy structure) PASS
+- Dockerfile parser 6/6 PASS (verified via portable scratch module; committed linux-tagged for engine types)
+- `GOOS=linux go test -c` compiles for dockerfile/build/system/thrived/runtime
+
+### Known limits (v1)
+- Multi-stage builds convert final stage only (warned); ADD = COPY (no URL/tar magic)
+- `system clean` legacy kept; `prune` is the Docker-parity path
+- Live bridge/COPY-into-running-container paths need Linux CI
+
+### Next (Phase E)
+Compose upgrades + swarm/buildx/plugin/context (full 100% scope).
+
+---
+
+## Session 2026-09-15 — Phase C: Network/Volume Management (2 parents, 12 subcommands)
+
+### What was done
+Named networks + named volumes with Docker-compatible CLI. Linux runs
+natively; macOS/Windows proxy store ops to the VM daemon. Runtime now
+attaches named networks at Start and auto-creates named volumes for -v.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | Named network store: create/ls/inspect/rm/connect/disconnect/prune, per-network IPAM, attachment records, pending (stopped-container) connects | `internal/network/nets.go` (new, portable) |
+| 2 | Generalized bridge/NAT + veth for named bridges; SetupVethOn (eth0/ethN); TeardownVethOn; shared consts | `internal/network/bridge.go`, `veth.go`, `consts.go` (new), `network_stub.go` |
+| 3 | Named volume store: create/ensure/inspect/list/remove/prune, in-use guard, IsNamedVolume classifier | `internal/volume/volume.go` (new, portable) |
+| 4 | Runtime: primary named network at Start, pending attaches (eth1+), TeardownAttachments on exit, DetachContainer on delete | `internal/runtime/runtime.go`, `network_attach.go` (new) |
+| 5 | Named -v resolution (auto-create like Docker) in run/create + daemon | `cmd/thrive/commands/run.go`, `lifecycle.go`, `cmd/thrived/exec.go` (+ `--network` now forwarded by run proxy path) |
+| 6 | CLI: `network` + `volume` parents (native linux, proxy !linux) | `cmd/thrive/commands/network*.go`, `volume*.go`, `main.go` |
+| 7 | thrived handlers for all 12 subcommands | `cmd/thrived/exec.go` |
+
+### Verification
+- linux/windows/host builds CLEAN; `go vet` CLEAN
+- `go test ./internal/volume/ ./internal/network/ ./cmd/thrive/commands/` PASS (8 volume + 6 network + 2 CLI tests new)
+- `GOOS=linux go test -c` compiles for network/volume/thrived/runtime
+- Live bridge/veth/iptables paths need Linux CI (unrunnable on macOS); metadata/IPAM/validation fully tested
+
+### Known limits (v1)
+- Custom networks are /16 bridge+NAT (no macvlan/overlay; CNI hook unchanged)
+- `network connect` on stopped containers applies at next start (recorded as pending)
+- Volume drivers/plugins out of scope (local driver only)
+
+### Next (Phase D)
+System + build parity: system df/events/prune, Dockerfile compat, cp/inspect/logs upgrades.
+
+---
+
+## Session 2026-09-15 — Phase B: Image/Distribution Parity (8 commands)
+
+### What was done
+New portable `internal/registry` package + 8 CLI commands. Linux/macOS run
+natively against the local image store; Windows proxies store-backed ops via
+the VM daemon while login/search/manifest stay local (no host image store).
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `image.StoreDir()` platform helper | `internal/image/types.go` |
+| 2 | Registry auth: login/logout/cred-store (~/.thrive/auth.json), RegistryHost normalisation, ResolveAuth precedence | `internal/registry/auth.go` |
+| 3 | Save/load (thrive-native tar: thrive-save.json + manifests + layers) | `internal/registry/save.go` |
+| 4 | Import tarball as image + layer history | `internal/registry/import.go` |
+| 5 | Docker Hub search API | `internal/registry/search.go` |
+| 6 | Manifest inspect (image + index) + local manifest-list create/annotate/push/rm | `internal/registry/manifest.go` |
+| 7 | CLI: save/load/import/history (native linux+darwin, proxy windows), login/logout/search/manifest (shared native all platforms) | `cmd/thrive/commands/distribution*.go`, `main.go` |
+| 8 | thrived handlers: save/load/import/history; auth now flows through handlePull | `cmd/thrived/exec.go` |
+| 9 | Stored creds auto-used by pull/push when flags omitted | `buildpushpull.go`, `buildpushpull_stub.go`, `buildpushpull_windows.go` |
+
+### Verification
+- `GOOS=linux|windows` + host `go build ./...` CLEAN; `go vet` CLEAN
+- `go test ./internal/registry/` 11/11 PASS (auth, save/load roundtrip, import, history, manifest CRUD)
+- `go test ./cmd/thrive/commands/` PASS (5 new CLI structure tests)
+- `GOOS=linux go test -c` compiles for registry/thrived/runtime/image
+
+### Known limits (v1)
+- Save format is thrive-native (not `docker load`-compatible); documented in archive
+- `history` shows layer digest/size only (no created timestamps stored)
+- `commit` digest locally generated (unchanged from Phase A)
+- Live registry ops (search, manifest inspect/push) need network; untested here
+
+### Next (Phase C)
+Network/volume management: network + volume create/ls/inspect/rm/connect.
+
+---
+
+## Session 2026-09-15 — Phase A: Container Lifecycle Parity (12 commands)
+
+### What was done
+Implemented all missing Docker container-lifecycle commands using ECC
+blueprint + golang-patterns + tdd-workflow skills. Work location:
+`projects-for-resume/thrive-full` (fresh clone of 6b9a4e4).
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | cgroup freezer + shares/pids + stats reader | `internal/cgroup/cgroup.go`, `internal/cgroup/stats.go` (new), `stats_test.go` (new) |
+| 2 | Runtime: Pause/Unpause/Wait/Rename/Stats/Update/Top/Port/Diff/Export/Commit | `internal/runtime/lifecycle.go` (new), `lifecycle_test.go` (new, 10 tests) |
+| 3 | Linux CLI: create/pause/unpause/wait/rename/stats/update/top/port/diff/export/commit | `cmd/thrive/commands/lifecycle.go` (new) |
+| 4 | macOS/Windows proxies via vm.DialControl | `cmd/thrive/commands/lifecycle_proxy.go` (new), `lifecycle_proxy_test.go` (new, 3 tests) |
+| 5 | thrived daemon handlers for all 12 | `cmd/thrived/exec.go` (dispatch + handlers) |
+| 6 | Registered all 12 in root command | `cmd/thrive/main.go` |
+
+### Verification
+- `GOOS=linux go build ./...` CLEAN, `GOOS=windows` CLEAN, host CLEAN
+- `GOOS=linux go vet ./...` CLEAN
+- `go test ./cmd/thrive/commands/` PASS (incl. 3 new proxy tests)
+- `GOOS=linux go test -c` compiles for runtime/cgroup/thrived (can't execute on macOS)
+- New: 10 runtime lifecycle tests + 1 cgroup stats test (linux-run in CI)
+
+### Known limits (v1)
+- `stats` is one-shot snapshot (`--no-stream` default); no streaming ticker yet
+- `diff` reports writable-layer files as Added; no whiteout/deleted detection
+- `commit` digest is locally generated (re-tar on push stays correct)
+- `pause` uses cgroup freezer; SIGKILL to frozen container takes effect on unpause (Docker behavior)
+
+### Next (Phase B)
+Image/distribution: save/load/import/history, login cred-store, search, manifest.
+
+---
+
+## Prior sessions (archived below)
 
 ---
 

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -17,6 +18,7 @@ import (
 
 func LogsCmd() *cobra.Command {
 	var follow bool
+	var tail int
 
 	cmd := &cobra.Command{
 		Use:   "logs [container]",
@@ -44,8 +46,21 @@ func LogsCmd() *cobra.Command {
 			}
 			defer f.Close()
 
-			// Dump existing content.
-			if _, err := io.Copy(os.Stdout, f); err != nil {
+			// Dump existing content (last N lines with --tail).
+			if tail > 0 {
+				data, err := io.ReadAll(f)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error reading logs: %v\n", err)
+					os.Exit(1)
+				}
+				lines := splitLines(string(data))
+				if len(lines) > tail {
+					lines = lines[len(lines)-tail:]
+				}
+				for _, l := range lines {
+					fmt.Println(l)
+				}
+			} else if _, err := io.Copy(os.Stdout, f); err != nil {
 				fmt.Fprintf(os.Stderr, "Error reading logs: %v\n", err)
 				os.Exit(1)
 			}
@@ -71,5 +86,14 @@ func LogsCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow log output")
+	cmd.Flags().IntVar(&tail, "tail", 0, "Number of lines to show from the end of the logs (0 = all)")
 	return cmd
+}
+
+func splitLines(s string) []string {
+	s = strings.TrimRight(s, "\n")
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, "\n")
 }

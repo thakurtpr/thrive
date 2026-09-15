@@ -40,26 +40,32 @@ func ExecCmd() *cobra.Command {
 				"--mount", "--pid", "--ipc", "--uts", "--net",
 				"--",
 			}
-			nsenterArgs = append(nsenterArgs, command...)
+		nsenterArgs = append(nsenterArgs, command...)
 
-			execCmd := exec.CommandContext(ctx, "nsenter", nsenterArgs...)
-			execCmd.Stdin = os.Stdin
-			execCmd.Stdout = os.Stdout
-			execCmd.Stderr = os.Stderr
-
-			if err := execCmd.Run(); err != nil {
-				if exitErr, ok := err.(*exec.ExitError); ok {
-					if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok {
-						os.Exit(ws.ExitStatus())
-					}
-				}
-				fmt.Fprintf(os.Stderr, "exec error: %v\n", err)
-				os.Exit(1)
-			}
-		},
+		os.Exit(execInContainerNS(ctx, nsenterArgs))
+	},
 	}
 	// Stop flag parsing after the container name so command flags (e.g. uname -a)
 	// are not mistaken for thrive exec flags.
 	cmd.Flags().SetInterspersed(false)
 	return cmd
+}
+
+// execInContainerNS runs a prebuilt nsenter argv, returning the exit code.
+func execInContainerNS(ctx context.Context, nsenterArgs []string) int {
+	execCmd := exec.CommandContext(ctx, "nsenter", nsenterArgs...)
+	execCmd.Stdin = os.Stdin
+	execCmd.Stdout = os.Stdout
+	execCmd.Stderr = os.Stderr
+
+	if err := execCmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+				return ws.ExitStatus()
+			}
+		}
+		fmt.Fprintf(os.Stderr, "exec error: %v\n", err)
+		return 1
+	}
+	return 0
 }

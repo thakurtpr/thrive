@@ -18,6 +18,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/thakurprasadrout/thrive/internal/events"
 )
 
 // hostImageStore returns the macOS host path for image storage.
@@ -122,6 +123,8 @@ func Pull(ctx context.Context, ref string, opts PullOptions) (*Image, error) {
 	if err := os.WriteFile(filepath.Join(imgDir, "manifest.json"), metaJSON, 0644); err != nil {
 		return nil, fmt.Errorf("image.Pull: write manifest: %w", err)
 	}
+
+	events.Log("image", "pull", parsed.String(), nil)
 
 	return &Image{
 		Ref:    parsed.String(),

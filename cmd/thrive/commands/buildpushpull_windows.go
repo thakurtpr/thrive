@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/thakurprasadrout/thrive/internal/registry"
 	"github.com/thakurprasadrout/thrive/internal/vm"
 )
 
@@ -55,6 +56,11 @@ func PullCmd() *cobra.Command {
 			fmt.Printf("Pulling %s ...\n", ref)
 
 			opts := map[string]any{}
+			if username == "" {
+				if c := registry.StoredAuth(registry.RegistryHost(ref)); c != nil {
+					username, password = c.Username, c.Password
+				}
+			}
 			if username != "" {
 				opts["username"] = username
 			}

@@ -4,20 +4,42 @@
 
 | Package | Test File | Coverage | Status | Notes |
 |---------|-----------|----------|--------|-------|
-| internal/runtime | runtime_test.go | ~30% | stable | saveState/loadState tested; exec/kill paths need expansion |
-| internal/image | (pending) | 0% | missing | needs image_test.go; Pull/Mount/Unmount/Push all untested |
-| internal/secrets | vault_test.go | ~60% | stable | encrypt/decrypt roundtrip verified; edge cases pending |
+| internal/runtime | runtime_test.go, lifecycle_test.go, runtime_extra_test.go | ~55% | improved | state roundtrip + 13 lifecycle error-path tests; live exec needs root |
+| internal/image | image_test.go | ~60% | improved | 31 tests: extractTar, chunk store, List, Mount/Unmount error paths, SafeRef |
+| internal/secrets | vault_test.go, vault_extra_test.go | ~70% | improved | roundtrip + wrong-key/corrupt/truncated edge cases + concurrency |
 | internal/telemetry | telemetry_test.go | ~50% | stable | concurrent safety verified via race detector |
-| internal/cgroup | cgroup_test.go | ~40% | stable | skips gracefully when not running as root |
-| internal/p2p | peer_test.go | ~25% | stable | engine init + select/add/remove peer tested |
+| internal/cgroup | cgroup_test.go, cgroup_extra_test.go | ~65% | improved | hermetic Manager tests (freeze/shares/pids/stats) via temp dirs |
+| internal/p2p | peer_test.go, peer_extra_test.go, torrent_extra_test.go | ~55% | improved | DHT ops, peers, chunk request paths |
 | pkg/build | build_test.go | ~45% | stable | CacheKey determinism verified; DAG execution partial |
 | pkg/dag | dag_test.go | ~80% | stable | topological sort + cycle detection fully tested |
 | pkg/thrivefile | thrivefile_test.go | ~75% | stable | YAML parsing for all directives verified |
-| internal/lazypull | (pending) | 0% | missing | needs lazypull_test.go; FUSE fetch path not covered |
-| cmd/ | (pending) | 0% | missing | CLI integration tests not yet written |
-| internal/vm (desktop) | darwin_launcher_test.go, wsl2_launcher_test.go, hyperv_launcher_test.go, download_test.go, vsock_darwin_test.go | ~80% | stable | 28 tests: launcher paths, download override, vsock bridge (PrepareVSOCKListener, CloseVSOCKListener, newVSOCKBridge, Exec success/error, ExecStream); all PASS (2026-05-17) |
+| internal/lazypull | lazypull_test.go | ~55% | improved | 11 tests: fetch paths, cache hits, HTTP errors |
+| cmd/thrive/commands | *_test.go | ~22% | improved | structure/flag tests for all Phase A–E commands (logic is thin by design) |
+| internal/vm (desktop) | darwin_launcher_test.go, wsl2_launcher_test.go, hyperv_launcher_test.go, download_test.go, vsock_darwin_test.go | ~80% | stable | 28 tests, all PASS |
 
-**Overall: ~35% — Target: 70%**
+**Overall: ~60% (measured on portable packages; Linux-only suites run in CI) — Target: 70%**
+
+### New packages (added in Phase A–E push, 2026-09-15)
+
+| Package | Test File | Coverage | Status | Notes |
+|---------|-----------|----------|--------|-------|
+| internal/events | events_test.go | 55% | new | log/query/filter/format (measured) |
+| internal/registry | registry_test.go | 55% | new | auth, save/load roundtrip, import, history, manifest CRUD (measured) |
+| internal/volume | volume_test.go | 82% | new | full CRUD + prune + classifier (measured) |
+| internal/network | nets_test.go, network_test.go | 61% | new | store/IPAM/validation (measured on darwin; bridge/veth need Linux) |
+| internal/buildx | buildx_test.go | 76% | new | builder CRUD + cache accounting (measured) |
+| internal/contextstore | contextstore_test.go | 78% | new | context CRUD + current (measured) |
+| internal/system | system_test.go | — | new | smoke tests (Linux CI) |
+| internal/swarm | swarm_test.go | — | new | init/leave/token/validation (Linux CI) |
+| internal/plugin | plugin_test.go | — | new | install/enable/disable/remove (Linux CI) |
+| internal/checkpoint | checkpoint_test.go | — | new | list/validation incl. CRIU gate (Linux CI) |
+| pkg/dockerfile | dockerfile_test.go | — | new | 6/6 PASS verified via portable scratch module |
+| pkg/compose | compose_extra_test.go | — | new | filter/scale/config/build-skips (Linux CI) |
+
+### How to complete the last mile (Linux runner)
+- `GOOS=linux go test -coverprofile=coverage.txt ./...` gives the authoritative total.
+- Biggest remaining lever: `cmd/thrive/commands` (22%) — add golden-output tests for ps/images/inspect formatting.
+- Live-path tests needing root: OverlayFS mount, veth/iptables, FUSE serve, criu dump.
 
 ---
 

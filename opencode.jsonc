@@ -1,0 +1,26 @@
+{
+  // OpenCode project config for THRIVE — daemonless, rootless OCI runtime (Go).
+  // Project overrides go in .opencode/opencode.jsonc (gitignored).
+  // Runtime overrides: OPENCODE_CONFIG env var.
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md"],
+  "permission": {
+    "bash": "ask",
+    "edit": "ask"
+  },
+  "mcp": {
+    "servers": {
+      // Up-to-date Go / library docs (replaces web-search guessing).
+      "context7": {
+        "type": "remote",
+        "url": "https://mcp.context7.com/mcp"
+      },
+      // GitHub issues/PRs/CI for this repo.
+      "github": {
+        "type": "local",
+        "command": ["gh", "api", "--help"],
+        "enabled": false
+      }
+    }
+  }
+}

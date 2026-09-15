@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -18,6 +19,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/thakurprasadrout/thrive/internal/cgroup"
+	"github.com/thakurprasadrout/thrive/internal/events"
 	"github.com/thakurprasadrout/thrive/internal/image"
 	"github.com/thakurprasadrout/thrive/internal/network"
 	"github.com/thakurprasadrout/thrive/internal/secrets"
@@ -82,6 +84,7 @@ func Create(ctx context.Context, cfg ContainerConfig) (*Container, error) {
 	telemetry.Debug("runtime.Create: state saved", telemetry.FieldString("containerID", cfg.ID))
 
 	log.Info("runtime.Create: completed successfully", telemetry.FieldString("containerID", cfg.ID))
+	events.Log("container", "create", cfg.ID, map[string]string{"image": cfg.Image})
 	return container, nil
 }
 
@@ -350,20 +353,37 @@ func Start(ctx context.Context, id string) (*os.File, error) {
 
 	var containerIP string
 	if cfg.NetworkMode != "host" && cfg.NetworkMode != "none" {
-		if bridgeErr := network.EnsureBridge(); bridgeErr != nil {
+		primary := cfg.NetworkMode
+		if primary == "" {
+			primary = "bridge"
+		}
+		nw, nwErr := network.InspectNetwork(primary)
+		if nwErr != nil {
+			log.Warn("runtime.Start: unknown network, falling back to bridge",
+				telemetry.FieldString("network", primary), telemetry.FieldError(nwErr))
+			nw, _ = network.InspectNetwork("bridge")
+		}
+		if bridgeErr := network.EnsureBridgeWith(nw.Bridge, nw.Gateway+"/16"); bridgeErr != nil {
 			log.Warn("runtime.Start: EnsureBridge failed", telemetry.FieldError(bridgeErr))
 		} else {
-			veth, vethErr := network.SetupVeth(id, pid)
+			veth, vethErr := network.SetupVethOn(nw, id, pid, "eth0")
 			if vethErr != nil {
 				log.Warn("runtime.Start: SetupVeth failed", telemetry.FieldError(vethErr))
 			} else {
 				containerIP = veth.ContainerIP
-				log.Info("runtime.Start: network configured", telemetry.FieldString("ip", containerIP))
+				network.RecordAttachment(id, network.Attachment{
+					Network: nw.Name, HostVeth: veth.Host,
+					Interface: "eth0", ContainerIP: containerIP,
+				})
+				log.Info("runtime.Start: network configured",
+					telemetry.FieldString("network", nw.Name),
+					telemetry.FieldString("ip", containerIP))
 				for _, pm := range cfg.Ports {
 					if pfErr := network.AddPortForward(containerIP, pm.HostPort, pm.ContainerPort, pm.Protocol); pfErr != nil {
 						log.Warn("runtime.Start: AddPortForward failed", telemetry.FieldError(pfErr))
 					}
 				}
+				attachPendingNetworks(id, pid, nw.Name, log)
 			}
 		}
 	}
@@ -417,8 +437,8 @@ func Start(ctx context.Context, id string) (*os.File, error) {
 			for _, pm := range capturedCfg.Ports {
 				network.RemovePortForward(capturedContainerIP, pm.HostPort, pm.ContainerPort, pm.Protocol)
 			}
-			network.TeardownVeth(id)
 		}
+		network.TeardownAttachments(id)
 
 		if len(capturedCfg.Secrets) > 0 {
 			if cleanErr := secrets.Cleanup(id); cleanErr != nil {
@@ -426,9 +446,11 @@ func Start(ctx context.Context, id string) (*os.File, error) {
 			}
 		}
 		log.Info("runtime.Start: container exited", telemetry.FieldString("containerID", id), telemetry.FieldInt("exitCode", exitCode))
+		events.Log("container", "die", id, map[string]string{"exitCode": strconv.Itoa(exitCode)})
 	}()
 
 	log.Info("runtime.Start: container running", telemetry.FieldString("containerID", id), telemetry.FieldInt("pid", pid))
+	events.Log("container", "start", id, map[string]string{"image": cfg.Image})
 	return ptmx, nil
 }
 
@@ -517,6 +539,7 @@ func Kill(ctx context.Context, id string, signal syscall.Signal) error {
 	}
 
 	log.Info("runtime.Kill: completed successfully", telemetry.FieldString("containerID", id))
+	events.Log("container", "kill", id, map[string]string{"signal": fmt.Sprintf("%d", int(signal))})
 	return nil
 }
 
@@ -528,12 +551,15 @@ func Delete(ctx context.Context, id string) error {
 	containerDir := filepath.Join("/run/thrive/containers", id)
 	log.Info("runtime.Delete: removing container directory", telemetry.FieldString("path", containerDir))
 
+	network.DetachContainer(id)
+
 	if err := os.RemoveAll(containerDir); err != nil {
 		log.Error("runtime.Delete: RemoveAll failed", telemetry.FieldString("path", containerDir), telemetry.FieldError(err))
 		return fmt.Errorf("runtime.Delete: remove %s: %w", containerDir, err)
 	}
 
 	log.Info("runtime.Delete: completed successfully", telemetry.FieldString("containerID", id))
+	events.Log("container", "destroy", id, nil)
 	return nil
 }
 

@@ -24,7 +24,7 @@ func SystemCmd() *cobra.Command {
 		Use:   "system",
 		Short: "System operations",
 	}
-	cmd.AddCommand(systemInfoCmd(), systemCleanCmd())
+	cmd.AddCommand(systemInfoCmd(), systemCleanCmd(), systemDfCmd(), systemEventsCmd(), systemPruneCmd())
 	return cmd
 }
 
