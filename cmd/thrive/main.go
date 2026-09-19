@@ -75,7 +75,14 @@ func main() {
 		commands.BuildxCmd(),
 		commands.ContextCmd(),
 		commands.PluginCmd(),
-		commands.CheckpointCmd(),	)
+		commands.CheckpointCmd(),
+		commands.AttachCmd(),
+		commands.VersionCmd(),
+		commands.NodeCmd(),
+		commands.ConfigCmd(),
+		commands.BuilderCmd(),
+		commands.ImageCmd(),
+		commands.ContainerCmd(),	)
 	if err := root.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)

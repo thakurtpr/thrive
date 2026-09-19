@@ -118,15 +118,19 @@ func ServiceCmd() *cobra.Command {
 			name, _ := cmd.Flags().GetString("name")
 			replicas, _ := cmd.Flags().GetInt("replicas")
 			envVars, _ := cmd.Flags().GetStringArray("env")
+			secrets, _ := cmd.Flags().GetStringArray("secret")
+			configs, _ := cmd.Flags().GetStringArray("config")
 			ports, _ := cmd.Flags().GetStringArray("publish")
 			volumes, _ := cmd.Flags().GetStringArray("volume")
 			netMode, _ := cmd.Flags().GetString("network")
 			parallelism, _ := cmd.Flags().GetInt("update-parallelism")
 			delay, _ := cmd.Flags().GetInt("update-delay")
+			restart, _ := cmd.Flags().GetString("restart")
 			_, err := dialSwarm(cmd, "service-create", args, map[string]any{
 				"name": name, "replicas": replicas, "env": envVars, "ports": ports,
-				"volumes": volumes, "network": netMode,
-				"parallelism": parallelism, "delay": delay,
+				"volumes": volumes, "network": netMode, "secrets": secrets,
+				"configs": configs,
+				"parallelism": parallelism, "delay": delay, "restart": restart,
 			})
 			return err
 		},
@@ -134,11 +138,14 @@ func ServiceCmd() *cobra.Command {
 	create.Flags().String("name", "", "Service name (required)")
 	create.Flags().IntP("replicas", "r", 1, "Replica count")
 	create.Flags().StringArrayP("env", "e", nil, "Environment variables")
+	create.Flags().StringArray("secret", nil, "Secrets to inject")
+	create.Flags().StringArray("config", nil, "Config object mount: name:/container/path")
 	create.Flags().StringArrayP("publish", "p", nil, "Publish ports")
 	create.Flags().StringArrayP("volume", "v", nil, "Volumes")
 	create.Flags().String("network", "", "Network mode or network name")
 	create.Flags().Int("update-parallelism", 1, "Rolling update batch size")
 	create.Flags().Int("update-delay", 0, "Seconds between update batches")
+	create.Flags().String("restart", "no", "Restart policy")
 	create.Flags().SetInterspersed(false)
 
 	simple := func(use, short, bridge string, minArgs, maxArgs int) *cobra.Command {

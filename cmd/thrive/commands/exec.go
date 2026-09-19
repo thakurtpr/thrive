@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -15,7 +16,21 @@ import (
 	"github.com/thakurprasadrout/thrive/internal/runtime"
 )
 
+// shellQuoteArg quotes one shell word.
+func shellQuoteArg(s string) string {
+	if s == "" {
+		return "''"
+	}
+	if !strings.ContainsAny(s, " \t\n\"'\\$`!*?[]{}()|&;<>") {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+}
+
 func ExecCmd() *cobra.Command {
+	var envVars []string
+	var workdir string
+	var interactive, tty bool
 	cmd := &cobra.Command{
 		Use:   "exec [container] [command...]",
 		Short: "Execute a command in a running container",
@@ -40,11 +55,27 @@ func ExecCmd() *cobra.Command {
 				"--mount", "--pid", "--ipc", "--uts", "--net",
 				"--",
 			}
-		nsenterArgs = append(nsenterArgs, command...)
+			// Env via the env(1) prefix (no nsenter version dependency);
+			// workdir via sh cd+exec wrapper for the same reason.
+			if len(envVars) > 0 {
+				command = append(append([]string{"env"}, envVars...), command...)
+			}
+			if workdir != "" {
+				script := "cd " + shellQuoteArg(workdir) + " && exec \"$@\""
+				command = append([]string{"/bin/sh", "-c", script, "thrive-exec"}, command...)
+			}
+			_ = interactive
+			_ = tty
 
-		os.Exit(execInContainerNS(ctx, nsenterArgs))
-	},
+			nsenterArgs = append(nsenterArgs, command...)
+
+			os.Exit(execInContainerNS(ctx, nsenterArgs))
+		},
 	}
+	cmd.Flags().StringArrayVarP(&envVars, "env", "e", nil, "Set environment variables")
+	cmd.Flags().StringVarP(&workdir, "workdir", "w", "", "Working directory inside the container")
+	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Keep stdin open (implied: stdin is attached)")
+	cmd.Flags().BoolVarP(&tty, "tty", "t", false, "Allocate a pseudo-TTY (informational: output is not raw-PTY)")
 	// Stop flag parsing after the container name so command flags (e.g. uname -a)
 	// are not mistaken for thrive exec flags.
 	cmd.Flags().SetInterspersed(false)

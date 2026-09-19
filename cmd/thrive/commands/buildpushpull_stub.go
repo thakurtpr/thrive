@@ -25,6 +25,7 @@ func BuildCmd() *cobra.Command {
 
 func PushCmd() *cobra.Command {
 	var username, password string
+	var quiet bool
 
 	cmd := &cobra.Command{
 		Use:   "push [image]",
@@ -36,8 +37,10 @@ func PushCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&username, "username", "", "Registry username")
 	cmd.Flags().StringVar(&password, "password", "", "Registry password")
+	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress progress output")
 	_ = username
 	_ = password
+	_ = quiet
 	return cmd
 }
 
@@ -45,7 +48,9 @@ func PushCmd() *cobra.Command {
 // macOS host. The VM reads images from the same store via virtiofs.
 // No `thrive desktop start` needed — pull works without a running VM.
 func PullCmd() *cobra.Command {
-	var username, password string
+	var username, password, platform string
+	var quiet, allTags, verifyPull bool
+	var verifyKey string
 
 	cmd := &cobra.Command{
 		Use:   "pull [image]",
@@ -53,33 +58,46 @@ func PullCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ref := args[0]
-			fmt.Printf("Pulling %s ...\n", ref)
+			if verifyPull && verifyKey == "" {
+				return fmt.Errorf("--verify requires --verify-key <cosign.pub>")
+			}
+			if !quiet {
+				fmt.Printf("Pulling %s ...\n", ref)
+			}
 
 			if username == "" {
 				if c := registry.StoredAuth(registry.RegistryHost(ref)); c != nil {
 					username, password = c.Username, c.Password
 				}
 			}
-			img, err := image.Pull(context.Background(), ref, image.PullOptions{
-				Username: username,
-				Password: password,
-			})
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
+			opts := image.PullOptions{Username: username, Password: password, Platform: platform}
+			refs := []string{ref}
+			if allTags {
+				var err error
+				if refs, err = listRepoTags(ref, username, password); err != nil {
+					return err
+				}
 			}
+			for _, r := range refs {
+				img, err := image.Pull(context.Background(), r, opts)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+					os.Exit(1)
+				}
 
-			digest := img.Digest
-			if len(digest) > 19 {
-				digest = digest[:19]
+				if !verifyPulledImage(context.Background(), r, img.Ref, img.Digest, username, password, verifyPull, verifyKey, quiet) {
+					os.Exit(1)
+				}
 			}
-			fmt.Printf("Pulled: %s\n", img.Ref)
-			fmt.Printf("Digest: %s\n", digest)
-			fmt.Printf("Layers: %d\n", len(img.Layers))
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&username, "username", "", "Registry username")
 	cmd.Flags().StringVar(&password, "password", "", "Registry password")
+	cmd.Flags().StringVar(&platform, "platform", "", "Platform (os/arch, e.g. linux/arm64)")
+	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress progress output")
+	cmd.Flags().BoolVarP(&allTags, "all-tags", "a", false, "Pull all tagged images in the repository")
+	cmd.Flags().BoolVar(&verifyPull, "verify", false, "Verify cosign signature after pull (requires --verify-key)")
+	cmd.Flags().StringVar(&verifyKey, "verify-key", "", "PEM public key file for cosign verification")
 	return cmd
 }

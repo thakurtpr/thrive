@@ -19,6 +19,7 @@ type ContainerConfig struct {
 	Mounts        []Mount
 	NetworkMode   string
 	Secrets       []string
+	Configs       []ConfigMount
 	Resources     ResourceLimits
 	RestartPolicy RestartPolicy
 	TTY           bool // allocate a pseudo-terminal for interactive sessions
@@ -33,11 +34,18 @@ type Mount struct {
 	Options     []string
 }
 
+// ConfigMount maps a swarm config object into a container path.
+type ConfigMount struct {
+	Source string // config object name
+	Target string // absolute path inside the container
+}
+
 // ResourceLimits specifies CPU and memory limits.
 type ResourceLimits struct {
 	MemoryLimit int64
 	CPUQuota    int64
 	CPUShares   int64
+	PIDsLimit   int64
 }
 
 // RestartPolicy defines how the supervisor handles container exit.

@@ -23,6 +23,7 @@ import (
 	"github.com/thakurprasadrout/thrive/internal/image"
 	"github.com/thakurprasadrout/thrive/internal/network"
 	"github.com/thakurprasadrout/thrive/internal/secrets"
+	"github.com/thakurprasadrout/thrive/internal/swarmconfig"
 	"github.com/thakurprasadrout/thrive/internal/telemetry"
 )
 
@@ -231,6 +232,42 @@ func Start(ctx context.Context, id string) (*os.File, error) {
 			parentBinds = append(parentBinds, dest)
 			log.Info("runtime.Start: bound volume", telemetry.FieldString("src", mnt.Source), telemetry.FieldString("dest", mnt.Destination))
 		}
+		// Materialise swarm config objects as host files and bind-mount them
+		// at their container targets (configs are non-sensitive by definition,
+		// so plain files — unlike secrets tmpfs — are sufficient).
+		for _, cm := range cfg.Configs {
+			if !filepath.IsAbs(cm.Target) || strings.Contains(cm.Target, "..") {
+				log.Warn("runtime.Start: config target must be an absolute path without .., skipping",
+					telemetry.FieldString("target", cm.Target))
+				continue
+			}
+			data, cfgErr := swarmconfig.Get(cm.Source)
+			if cfgErr != nil {
+				log.Warn("runtime.Start: config not found, skipping",
+					telemetry.FieldString("config", cm.Source), telemetry.FieldError(cfgErr))
+				continue
+			}
+			hostFile := filepath.Join("/run/thrive/containers", id, "configs", filepath.FromSlash(cm.Target))
+			if mkdirErr := os.MkdirAll(filepath.Dir(hostFile), 0755); mkdirErr != nil {
+				log.Warn("runtime.Start: config mkdir failed", telemetry.FieldError(mkdirErr))
+				continue
+			}
+			if writeErr := os.WriteFile(hostFile, data, 0644); writeErr != nil {
+				log.Warn("runtime.Start: config write failed", telemetry.FieldError(writeErr))
+				continue
+			}
+			dest := filepath.Join(rootfsPath, cm.Target)
+			os.MkdirAll(filepath.Dir(dest), 0755)
+			if f, createErr := os.OpenFile(dest, os.O_CREATE|os.O_RDONLY, 0644); createErr == nil {
+				f.Close()
+			}
+			if bindErr := syscall.Mount(hostFile, dest, "", syscall.MS_BIND, ""); bindErr != nil {
+				log.Warn("runtime.Start: config bind failed",
+					telemetry.FieldString("config", cm.Source), telemetry.FieldError(bindErr))
+				continue
+			}
+			parentBinds = append(parentBinds, dest)
+		}
 	}
 
 	containerDir := filepath.Join("/run/thrive/containers", id)
@@ -404,6 +441,16 @@ func Start(ctx context.Context, id string) (*os.File, error) {
 				log.Warn("runtime.Start: SetCPUQuota failed", telemetry.FieldError(quotaErr))
 			}
 		}
+		if cfg.Resources.CPUShares > 0 {
+			if sharesErr := cgMgr.SetCPUShares(cfg.Resources.CPUShares); sharesErr != nil {
+				log.Warn("runtime.Start: SetCPUShares failed", telemetry.FieldError(sharesErr))
+			}
+		}
+		if cfg.Resources.PIDsLimit > 0 {
+			if pidsErr := cgMgr.SetPIDsLimit(cfg.Resources.PIDsLimit); pidsErr != nil {
+				log.Warn("runtime.Start: SetPIDsLimit failed", telemetry.FieldError(pidsErr))
+			}
+		}
 	}
 
 	state.PID = pid
@@ -426,6 +473,10 @@ func Start(ctx context.Context, id string) (*os.File, error) {
 			exitCode = execCmd.ProcessState.ExitCode()
 		}
 		telemetry.Debug("runtime.Start: process exited", telemetry.FieldInt("pid", pid), telemetry.FieldInt("exitCode", exitCode))
+
+		if tryRestart(ctx, id, containerDir, state, capturedCfg, exitCode, log) {
+			return
+		}
 
 		state.Status = "stopped"
 		state.ExitCode = exitCode

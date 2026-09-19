@@ -19,12 +19,22 @@ import (
 func LogsCmd() *cobra.Command {
 	var follow bool
 	var tail int
+	var since, until string
+	var timestamps bool
+	// NOTE: --since/--until/--timestamps are registered for Docker CLI parity
+	// but honestly refused below. Thrive is daemonless: detached container
+	// stdio streams straight to the log file, so per-line timestamps cannot
+	// be recorded truthfully, and time-range filtering would lie by omission.
 
 	cmd := &cobra.Command{
 		Use:   "logs [container]",
 		Short: "View container logs",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
+			if since != "" || until != "" || timestamps {
+				fmt.Fprintf(os.Stderr, "Error: --since/--until/--timestamps require per-line timestamps, which thrive's daemonless log files do not record (stdio streams directly to the log file)\n")
+				os.Exit(1)
+			}
 			ctx := context.Background()
 			containerID := args[0]
 
@@ -87,6 +97,9 @@ func LogsCmd() *cobra.Command {
 
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow log output")
 	cmd.Flags().IntVar(&tail, "tail", 0, "Number of lines to show from the end of the logs (0 = all)")
+	cmd.Flags().StringVar(&since, "since", "", "Show logs since timestamp (not supported: no per-line timestamps recorded)")
+	cmd.Flags().StringVar(&until, "until", "", "Show logs before timestamp (not supported: no per-line timestamps recorded)")
+	cmd.Flags().BoolVarP(&timestamps, "timestamps", "t", false, "Show timestamps (not supported: no per-line timestamps recorded)")
 	return cmd
 }
 

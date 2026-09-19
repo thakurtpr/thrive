@@ -109,3 +109,28 @@ func TestSplitScale(t *testing.T) {
 		t.Error("splitScale negative: expected false, got true")
 	}
 }
+
+// TestR2FlagDepth verifies R2 Docker-parity flags exist.
+func TestR2FlagDepth(t *testing.T) {
+	for _, flagName := range []string{"platform", "quiet", "all-tags", "verify", "verify-key"} {
+		if f := PullCmd().Flags().Lookup(flagName); f == nil {
+			t.Errorf("PullCmd: missing --%s flag", flagName)
+		}
+	}
+	if f := PushCmd().Flags().Lookup("quiet"); f == nil {
+		t.Error("PushCmd: missing --quiet flag")
+	}
+	for _, flagName := range []string{"author", "message", "pause"} {
+		if f := CommitCmd().Flags().Lookup(flagName); f == nil {
+			t.Errorf("CommitCmd: missing --%s flag", flagName)
+		}
+	}
+	for _, flagName := range []string{"since", "until", "timestamps"} {
+		if f := LogsCmd().Flags().Lookup(flagName); f == nil {
+			t.Errorf("LogsCmd: missing --%s flag", flagName)
+		}
+	}
+	if f := StatsCmd().Flags().Lookup("no-stream"); f == nil {
+		t.Error("StatsCmd: missing --no-stream flag")
+	}
+}

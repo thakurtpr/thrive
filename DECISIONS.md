@@ -225,3 +225,65 @@ abstracted behind three function-typed fields (`commandRunner`, `processStarter`
 If the subprocess approach becomes limiting (e.g. need for low-latency VM device
 hotplug), the `launcher` interface in `lifecycle.go` makes it straightforward to
 add an alternative implementation behind the same dispatch.
+
+---
+
+## R2 flag depth (2026-09-15) — logs --since/--until/--timestamps
+
+### Context
+`docker logs` supports `--since/--until/--timestamps`. Thrive is daemonless:
+detached container stdio streams straight to `/run/thrive/containers/{id}/logs`
+with no per-line timestamps recorded.
+
+### Decision
+Register all three flags on every platform (CLI parity: scripts passing them
+get a clear thrive error instead of `unknown flag`), but honestly refuse at
+runtime with an explicit message. The daemon (`handleLogs`) rejects them too,
+so VM-proxied calls behave identically. No fake timestamp synthesis.
+
+### If this ever changes
+Recording per-line timestamps would require a stdio proxy process between the
+container and the log file (a small daemon-shaped component), which contradicts
+the daemonless design. Revisit only if the project accepts that tradeoff.
+
+## R2 flag depth (2026-09-15) — diff Changed/Deleted
+
+### Decision
+`runtime.Diff` now reports Docker-style kinds: OverlayFS whiteout char devices
+(rdev 0/0) and `.wh.` markers → Deleted; opaque dirs (`trusted.overlay.opaque`)
+→ Changed; entries also present in a lower image layer (via the container's
+recorded image manifest) → Changed; otherwise → Added. No lower-layer access
+(e.g. image gone) degrades to Added, never to an error.
+
+## R3 (2026-09-19) — cosign verification is host-side
+
+### Context
+`thrive pull --verify --verify-key cosign.pub` checks the OCI `.sig`
+artifact via sigstore-go. The PEM key file lives on the client machine;
+the VM daemon (`thrived`) never sees host files.
+
+### Decision
+Verification runs in the client, never in the daemon:
+- Linux/darwin pull natively and call shared `verifyPulledImage`, which
+  removes the image on failure so untrusted content is never left behind.
+- Windows pulls inside the VM via the bridge, then verifies host-side
+  (remote registry lookup needs no image bytes) and issues `rmi` over the
+  bridge on failure. With `--all-tags` every tag is verified.
+- `thrived handlePull` explicitly rejects a `verify` opt with a clear
+  error, so no future client can silently skip verification.
+
+### Non-goal
+Keyless (Fulcio/Rekor) identities stay out of scope: offline verification
+against an explicit public key file only.
+
+## R3 (2026-09-19) — stats streaming keeps one-shot default
+
+### Context
+`docker stats` streams by default; thrive historically defaulted to a
+one-shot snapshot (`--no-stream=true`, "streaming not yet supported").
+
+### Decision
+Streaming is now implemented (2s client-side poll until SIGINT, one-shot
+per-container fetch on the daemon), but the default stays one-shot for
+back-compat. Pass `--no-stream=false` to stream. Flipping the default is
+a deliberate breaking change left for a later release.

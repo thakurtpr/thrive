@@ -32,11 +32,14 @@ func ServiceCmd() *cobra.Command {
 			}
 			replicas, _ := cmd.Flags().GetInt("replicas")
 			envVars, _ := cmd.Flags().GetStringArray("env")
+			secretNames, _ := cmd.Flags().GetStringArray("secret")
+			configSpecs, _ := cmd.Flags().GetStringArray("config")
 			portSpecs, _ := cmd.Flags().GetStringArray("publish")
 			volumeSpecs, _ := cmd.Flags().GetStringArray("volume")
 			netMode, _ := cmd.Flags().GetString("network")
 			parallelism, _ := cmd.Flags().GetInt("update-parallelism")
 			delay, _ := cmd.Flags().GetInt("update-delay")
+			restart, _ := cmd.Flags().GetString("restart")
 
 			ports, err := parsePortSpecs(portSpecs)
 			if err != nil {
@@ -48,8 +51,9 @@ func ServiceCmd() *cobra.Command {
 			}
 			svc, err := swarm.CreateService(context.Background(), name, swarm.ServiceSpec{
 				Image: args[0], Command: args[1:], Env: envVars,
+				Secrets: secretNames, Configs: parseConfigSpecs(configSpecs),
 				Replicas: replicas, Ports: ports, Mounts: mounts,
-				NetworkMode: netMode, Parallelism: parallelism, DelaySecs: delay,
+				NetworkMode: netMode, Restart: restart, Parallelism: parallelism, DelaySecs: delay,
 			})
 			if err != nil {
 				return err
@@ -61,9 +65,12 @@ func ServiceCmd() *cobra.Command {
 	create.Flags().String("name", "", "Service name (required)")
 	create.Flags().IntP("replicas", "r", 1, "Replica count")
 	create.Flags().StringArrayP("env", "e", nil, "Environment variables")
+	create.Flags().StringArray("secret", nil, "Secrets to inject")
+	create.Flags().StringArray("config", nil, "Config object mount: name:/container/path")
 	create.Flags().StringArrayP("publish", "p", nil, "Publish ports host:container[/proto]")
 	create.Flags().StringArrayP("volume", "v", nil, "Volumes name:/container or /host:/container")
 	create.Flags().String("network", "", "Network mode or network name")
+	create.Flags().String("restart", "no", "Restart policy (no, always, on-failure[:max], unless-stopped)")
 	create.Flags().Int("update-parallelism", 1, "Rolling update batch size")
 	create.Flags().Int("update-delay", 0, "Seconds between update batches")
 	create.Flags().SetInterspersed(false)

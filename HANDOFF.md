@@ -1,7 +1,63 @@
 # THRIVE — HANDOFF
 
 ## Last updated
-2026-09-15T18:00:00Z
+2026-09-19T00:00:00Z
+
+---
+
+## Session 2026-09-19 — R3: cosign verify parity + stats streaming
+
+### What was done
+Closed R3: `pull --verify/--verify-key` works on all three platforms and
+`stats --no-stream=false` streams. Also repaired two latent R2 breakages
+found during proper gate review (windows build + duplicate helper).
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | darwin `pull --verify/--verify-key` via shared `verifyPulledImage` (was linux-only) | `buildpushpull_stub.go` |
+| 2 | windows `pull --verify/--verify-key`: host-side `signing.VerifyCosignImage` after daemon pull; per-tag verify with `--all-tags`; `rmi` cleanup on failure | `buildpushpull_windows.go` |
+| 3 | thrived `handlePull` explicitly rejects `verify` opt (key lives on host; clients verify) instead of silently skipping | `cmd/thrived/exec.go` |
+| 4 | `internal/image/image_windows.go` stub (Pull/Remove/List/Push/Mount) so shared helpers compile on windows; honest errors directing to VM daemon | `internal/image/image_windows.go` (new) |
+| 5 | Removed duplicate `shortDigest` (shared helper already in `distribution_shared.go`) — was breaking `GOOS=linux` build | `cmd/thrive/commands/buildpushpull.go` |
+| 6 | `stats` streaming: linux `printStatsSnapshot` + 2s ticker until SIGINT (`--no-stream=false`); proxy polls daemon every 2s; `--no-stream` flag added to proxy | `lifecycle.go`, `lifecycle_proxy.go` |
+| 7 | Tests: `--verify/--verify-key` + `--no-stream` assertions (linux + proxy) | `commands_phase_test.go`, `lifecycle_proxy_test.go` |
+| 8 | `gofmt -w` on `misc.go` (import order) | `cmd/thrive/commands/misc.go` |
+
+### Verification
+- `go build` CLEAN on host + `GOOS=linux` + `GOOS=windows` + `GOOS=darwin`
+- `go vet` CLEAN on host + linux + windows; gofmt clean on all touched files
+- `go test ./...` — 0 FAIL; linux/windows suites compile-checked via `go test -c`
+
+### Next
+- Commit R2+R3 as one reviewed unit (currently uncommitted: ~40 modified/new files)
+- Live Linux CI run (cgroup/overlay/veth paths can't execute on macOS)
+- Consider `stats` default flip to streaming for full docker parity (kept one-shot default for back-compat this session)
+
+---
+
+## Session 2026-09-15 — R2: flag depth (pull/push/commit/diff/logs)
+
+### What was done
+Closed the R2 Docker CLI flag gaps. Linux native; macOS/Windows via daemon
+proxies; thrived handlers extended to match.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `pull --platform/--quiet/--all-tags`, `push --quiet` (linux+darwin+windows) | `buildpushpull.go`, `buildpushpull_stub.go`, `buildpushpull_windows.go` |
+| 2 | `registry.ListRepoTags` (single impl, portable) + shared `listRepoTags` shim | `internal/registry/tags.go` (new), `distribution_shared.go` |
+| 3 | `commit -a/--author, -p/--pause` (+ existing `-m`); author/message/created stored in image manifest; pause freezes running containers around copy | `internal/runtime/lifecycle.go` (`CommitOptions`, `CommitWithOptions`), `lifecycle.go`, `lifecycle_proxy.go`, `thrived/exec.go` |
+| 4 | `diff` C/D: whiteout char 0/0 + `.wh.` → Deleted; opaque xattr dirs → Changed; lower-layer lookup → Changed else Added | `internal/runtime/lifecycle.go` |
+| 5 | `logs --since/--until/--timestamps` registered everywhere, honestly refused (no per-line timestamps in daemonless logs); daemon rejects too | `logs.go`, `logs_proxy.go`, `thrived/exec.go`, `DECISIONS.md` |
+| 6 | thrived `handlePull` forwards platform + implements all-tags loop | `cmd/thrived/exec.go` |
+| 7 | Tests: R2 flag assertions (linux + proxy), ListRepoTags invalid-ref, Diff-missing, CommitWithOptions-empty-ref | `commands_phase_test.go`, `lifecycle_proxy_test.go`, `tags_test.go`, `lifecycle_test.go` |
+| 8 | Fixed `handlePull` same-line-brace syntax error; fixed darwin `exec_proxy.go` stray brace + `StringVarP` (prior session break) | `thrived/exec.go`, `exec_proxy.go`, `exec.go` |
+
+### Verification
+- host + `GOOS=linux` + `GOOS=windows` builds CLEAN; `GOOS=linux go vet` CLEAN; gofmt clean on all touched files
+- `go test ./...` — 13 ok, 0 FAIL (linux-only suites compile-checked via `go test -c`)
+
+### Next (R3)
+cosign/Sigstore verification via sigstore-go + `pull --verify`, stats streaming ticker.
 
 ---
 

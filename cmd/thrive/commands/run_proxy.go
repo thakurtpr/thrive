@@ -38,6 +38,10 @@ func RunCmd() *cobra.Command {
 				opts["secrets"] = secrets
 			}
 
+			if configs, _ := cmd.Flags().GetStringArray("config"); len(configs) > 0 {
+				opts["configs"] = configs
+			}
+
 			if ports, _ := cmd.Flags().GetStringArray("publish"); len(ports) > 0 {
 				opts["ports"] = parseProxyPortSpecs(ports)
 			}
@@ -48,6 +52,22 @@ func RunCmd() *cobra.Command {
 
 			if netMode := cmd.Flag("network").Value.String(); netMode != "" {
 				opts["network"] = netMode
+			}
+
+			if v, _ := cmd.Flags().GetString("memory"); v != "" {
+				opts["memory"] = v
+			}
+			if v, _ := cmd.Flags().GetFloat64("cpus"); v > 0 {
+				opts["cpus"] = v
+			}
+			if v, _ := cmd.Flags().GetInt64("cpu-shares"); v > 0 {
+				opts["cpu_shares"] = v
+			}
+			if v, _ := cmd.Flags().GetInt64("pids-limit"); v > 0 {
+				opts["pids_limit"] = v
+			}
+			if v, _ := cmd.Flags().GetString("restart"); v != "" {
+				opts["restart"] = v
 			}
 
 			data, err := vm.DialControl(ctx, "run", args, opts)
@@ -70,10 +90,16 @@ func RunCmd() *cobra.Command {
 	run.Flags().Bool("rm", false, "Remove container when it exits")
 	run.Flags().StringArrayP("env", "e", nil, "Set environment variables")
 	run.Flags().StringArray("secret", nil, "Pass secret to container")
+	run.Flags().StringArray("config", nil, "Config object mount: name:/container/path")
 	run.Flags().String("name", "", "Assign a name to the container")
 	run.Flags().StringArrayP("publish", "p", nil, "Publish port(s): host:container[/proto]")
 	run.Flags().StringArrayP("volume", "v", nil, "Bind mount: /host:/container")
 	run.Flags().String("network", "", "Network mode")
+	run.Flags().String("memory", "", "Memory limit (e.g. 512m, 1g)")
+	run.Flags().Float64("cpus", 0, "CPU count (e.g. 1.5)")
+	run.Flags().Int64("cpu-shares", 0, "CPU shares (relative weight)")
+	run.Flags().Int64("pids-limit", 0, "Maximum number of processes")
+	run.Flags().String("restart", "", "Restart policy (no, always, on-failure[:max], unless-stopped)")
 	run.Flags().BoolP("tty", "t", false, "Allocate a pseudo-TTY")
 	run.Flags().BoolP("interactive", "i", false, "Keep stdin open")
 

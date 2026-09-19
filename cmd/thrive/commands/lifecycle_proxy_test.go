@@ -49,3 +49,38 @@ func TestExportCmd_OutputFlag(t *testing.T) {
 		t.Error("ExportCmd: missing --output flag")
 	}
 }
+
+// TestCommitCmd_R2Flags verifies the commit proxy exposes -a/-m/-p parity flags.
+func TestCommitCmd_R2Flags(t *testing.T) {
+	cmd := commands.CommitCmd()
+	for _, flagName := range []string{"author", "message", "pause"} {
+		if f := cmd.Flags().Lookup(flagName); f == nil {
+			t.Errorf("CommitCmd proxy: missing --%s flag", flagName)
+		}
+	}
+}
+
+// TestPullCmd_R3Flags verifies the pull proxy exposes verify + stats
+// streaming parity flags on non-Linux platforms.
+func TestPullCmd_R3Flags(t *testing.T) {
+	cmd := commands.PullCmd()
+	for _, flagName := range []string{"platform", "quiet", "all-tags", "verify", "verify-key"} {
+		if f := cmd.Flags().Lookup(flagName); f == nil {
+			t.Errorf("PullCmd proxy: missing --%s flag", flagName)
+		}
+	}
+	if f := commands.StatsCmd().Flags().Lookup("no-stream"); f == nil {
+		t.Error("StatsCmd proxy: missing --no-stream flag")
+	}
+}
+
+// TestLogsCmd_R2Flags verifies the logs proxy exposes time-filter flags
+// (registered for parity, honestly refused at runtime).
+func TestLogsCmd_R2Flags(t *testing.T) {
+	cmd := commands.LogsCmd()
+	for _, flagName := range []string{"since", "until", "timestamps"} {
+		if f := cmd.Flags().Lookup(flagName); f == nil {
+			t.Errorf("LogsCmd proxy: missing --%s flag", flagName)
+		}
+	}
+}

@@ -6,16 +6,11 @@ import (
 	encb64 "encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 
 	"github.com/spf13/cobra"
 	"github.com/thakurprasadrout/thrive/internal/vm"
 )
-
-func readAllStdin() ([]byte, error) {
-	return io.ReadAll(os.Stdin)
-}
 
 // On Windows there is no host-side image store: images live inside the
 // Thrive VM, so store-backed commands proxy via the control socket.

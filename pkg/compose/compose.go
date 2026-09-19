@@ -432,6 +432,11 @@ func startServiceAt(ctx context.Context, projectName, name string, svc *ServiceD
 		Mounts:      mounts,
 		NetworkMode: netMode,
 	}
+	if svc.Restart != "" {
+		if policy, err := runtime.ParseRestartPolicy(svc.Restart); err == nil {
+			cfg.RestartPolicy = policy
+		}
+	}
 
 	if _, err := runtime.Create(ctx, cfg); err != nil {
 		return fmt.Errorf("create: %w", err)

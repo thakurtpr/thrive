@@ -4,15 +4,57 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/thakurprasadrout/thrive/internal/image"
 	"github.com/thakurprasadrout/thrive/internal/registry"
+	"github.com/thakurprasadrout/thrive/internal/signing"
 )
+
+// listRepoTags returns fully-qualified refs for every tag in ref's
+// repository (docker pull --all-tags parity). Shared by all platforms.
+func listRepoTags(ref, username, password string) ([]string, error) {
+	return registry.ListRepoTags(context.Background(), ref, username, password)
+}
+
+func shortDigest(d string) string {
+	if len(d) > 12 {
+		return d[:12]
+	}
+	return d
+}
+
+// verifyPulledImage runs cosign verification when requested, removing the
+// image on failure so untrusted content is never left behind. Reports
+// pull output unless quiet. Returns false on failure (caller exits).
+// Shared by the linux and darwin pull paths (windows verifies in-VM).
+func verifyPulledImage(ctx context.Context, ref, pulledRef, digest, username, password string, verifyPull bool, verifyKey string, quiet bool) bool {
+	if verifyPull {
+		if err := signing.VerifyCosignImage(ctx, ref, verifyKey, username, password); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cosign verification failed for %s: %v\n", ref, err)
+			image.Remove(ctx, pulledRef) //nolint:errcheck
+			return false
+		}
+		if !quiet {
+			fmt.Printf("Verified: %s\n", pulledRef)
+		}
+	}
+	if !quiet {
+		fmt.Printf("Pulled: %s@%s\n", pulledRef, shortDigest(digest))
+	} else {
+		fmt.Println(pulledRef)
+	}
+	return true
+}
 
 // LoginCmd stores registry credentials (docker login parity).
 func LoginCmd() *cobra.Command {
 	var username, password string
+	var passwordStdin bool
 	cmd := &cobra.Command{
 		Use:   "login [server]",
 		Short: "Log in to a registry (stores credentials for pull/push)",
@@ -21,6 +63,13 @@ func LoginCmd() *cobra.Command {
 			server := "https://index.docker.io/v1/"
 			if len(args) == 1 {
 				server = args[0]
+			}
+			if passwordStdin {
+				raw, err := io.ReadAll(os.Stdin)
+				if err != nil {
+					return fmt.Errorf("login: read password: %w", err)
+				}
+				password = strings.TrimRight(string(raw), "\r\n")
 			}
 			if username == "" {
 				return fmt.Errorf("login: --username is required")
@@ -34,6 +83,7 @@ func LoginCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&username, "username", "u", "", "Registry username")
 	cmd.Flags().StringVarP(&password, "password", "p", "", "Registry password (omit for prompt-free empty)")
+	cmd.Flags().BoolVar(&passwordStdin, "password-stdin", false, "Read password from stdin")
 	return cmd
 }
 
@@ -60,6 +110,7 @@ func LogoutCmd() *cobra.Command {
 // SearchCmd searches Docker Hub for images.
 func SearchCmd() *cobra.Command {
 	var limit int
+	var filter, format string
 	cmd := &cobra.Command{
 		Use:   "search [query]",
 		Short: "Search Docker Hub for images",
@@ -69,8 +120,24 @@ func SearchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if format != "" {
+				for _, r := range results {
+					out, err := renderFormat(format, map[string]any{
+						"name": r.Name, "description": r.Description,
+						"stars": r.Stars, "official": r.Official,
+					})
+					if err != nil {
+						return err
+					}
+					fmt.Println(out)
+				}
+				return nil
+			}
 			fmt.Printf("%-45s %-40s %s\n", "NAME", "DESCRIPTION", "STARS")
 			for _, r := range results {
+				if filter == "is-official=true" && !r.Official {
+					continue
+				}
 				desc := r.Description
 				if len(desc) > 38 {
 					desc = desc[:38]
@@ -85,6 +152,8 @@ func SearchCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&limit, "limit", 25, "Max number of results (1-100)")
+	cmd.Flags().StringVar(&filter, "filter", "", "Filter results (is-official=true)")
+	cmd.Flags().StringVar(&format, "format", "", "Format output with a Go template")
 	return cmd
 }
 

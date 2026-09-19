@@ -15,10 +15,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/thakurprasadrout/thrive/internal/cgroup"
+	"github.com/thakurprasadrout/thrive/internal/events"
 	"github.com/thakurprasadrout/thrive/internal/image"
+	"github.com/thakurprasadrout/thrive/internal/telemetry"
+	"go.uber.org/zap"
+	"golang.org/x/sys/unix"
 )
 
 // ContainerStats is a point-in-time resource snapshot for `thrive stats`.
@@ -295,11 +300,20 @@ func ContainerPorts(ctx context.Context, id string) ([]PortMapping, error) {
 }
 
 // Diff lists files changed in the container's writable layer.
+//
+// OverlayFS semantics (docker diff parity):
+//   - whiteout char devices (rdev 0/0) and ".wh." prefixed entries mark
+//     deletions from a lower layer → reported as D.
+//   - opaque directories (xattr trusted.overlay.opaque=y) hide all lower
+//     content → the directory itself is reported as C.
+//   - any other entry whose relative path also exists in a lower image
+//     layer → C (changed); otherwise → A (added).
 func Diff(ctx context.Context, id string) ([]FileChange, error) {
 	upperDir := filepath.Join(containerDir(id), "upper")
 	if _, err := os.Stat(upperDir); err != nil {
 		return nil, nil
 	}
+	lowerDirs := lowerLayerDirs(id)
 	var out []FileChange
 	err := filepath.Walk(upperDir, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
@@ -309,6 +323,29 @@ func Diff(ctx context.Context, id string) ([]FileChange, error) {
 		if rel == "." {
 			return nil
 		}
+		base := filepath.Base(rel)
+		dir := filepath.Dir(rel)
+		// Deletion markers: OverlayFS whiteout char 0/0, or .wh. files
+		// (aufs-style and tar-export style markers some tools leave behind).
+		if strings.HasPrefix(base, ".wh.") {
+			out = append(out, FileChange{Kind: "D", Path: "/" + filepath.Join(dir, strings.TrimPrefix(base, ".wh."))})
+			return nil
+		}
+		if fi.Mode()&os.ModeCharDevice != 0 {
+			if st, ok := fi.Sys().(*syscall.Stat_t); ok && st.Rdev == 0 {
+				out = append(out, FileChange{Kind: "D", Path: "/" + rel})
+				return nil
+			}
+		}
+		// Opaque directory: lower content hidden → changed.
+		if fi.IsDir() && isOpaqueDir(path) {
+			out = append(out, FileChange{Kind: "C", Path: "/" + rel})
+			return nil
+		}
+		if lowerExists(lowerDirs, rel) {
+			out = append(out, FileChange{Kind: "C", Path: "/" + rel})
+			return nil
+		}
 		out = append(out, FileChange{Kind: "A", Path: "/" + rel})
 		return nil
 	})
@@ -316,6 +353,56 @@ func Diff(ctx context.Context, id string) ([]FileChange, error) {
 		return nil, fmt.Errorf("runtime.Diff: walk: %w", err)
 	}
 	return out, nil
+}
+
+// lowerLayerDirs returns the extracted image layer directories for the
+// container's image, used to distinguish Changed from Added in Diff.
+func lowerLayerDirs(id string) []string {
+	data, err := os.ReadFile(filepath.Join(containerDir(id), "config.json"))
+	if err != nil {
+		return nil
+	}
+	var cfg ContainerConfig
+	if err := json.Unmarshal(data, &cfg); err != nil || cfg.Image == "" {
+		return nil
+	}
+	metaData, err := os.ReadFile(filepath.Join("/var/lib/thrive/images", image.SafeRef(cfg.Image), "manifest.json"))
+	if err != nil {
+		return nil
+	}
+	var meta struct {
+		Layers []image.Layer
+	}
+	if err := json.Unmarshal(metaData, &meta); err != nil {
+		return nil
+	}
+	var dirs []string
+	for _, l := range meta.Layers {
+		if l.Path != "" {
+			dirs = append(dirs, l.Path)
+		}
+	}
+	return dirs
+}
+
+// lowerExists reports whether rel exists in any lower image layer.
+func lowerExists(lowerDirs []string, rel string) bool {
+	for _, d := range lowerDirs {
+		if _, err := os.Lstat(filepath.Join(d, rel)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// isOpaqueDir reports whether path carries the OverlayFS opaque xattr.
+func isOpaqueDir(path string) bool {
+	buf := make([]byte, 8)
+	n, err := unix.Getxattr(path, "trusted.overlay.opaque", buf)
+	if err != nil {
+		return false
+	}
+	return strings.TrimRight(string(buf[:n]), "\x00") == "y"
 }
 
 // Export tars the container's filesystem to w.
@@ -336,9 +423,24 @@ func Export(ctx context.Context, id string, w io.Writer) error {
 	return nil
 }
 
+// CommitOptions holds docker commit parity fields (-a/--author, -m/--message,
+// -p/--pause). Author/Message are recorded in the image manifest; Pause
+// freezes a running container around the layer copy (best effort).
+type CommitOptions struct {
+	Author  string
+	Message string
+	Pause   bool
+}
+
 // Commit snapshots the container's writable layer as a new local image.
 func Commit(ctx context.Context, id, newRef string) error {
-	if _, err := loadState(id); err != nil {
+	return CommitWithOptions(ctx, id, newRef, CommitOptions{})
+}
+
+// CommitWithOptions snapshots with author/message metadata and optional pause.
+func CommitWithOptions(ctx context.Context, id, newRef string, opts CommitOptions) error {
+	state, err := loadState(id)
+	if err != nil {
 		return fmt.Errorf("runtime.Commit: %w", err)
 	}
 	if newRef == "" {
@@ -347,6 +449,15 @@ func Commit(ctx context.Context, id, newRef string) error {
 	upperDir := filepath.Join(containerDir(id), "upper")
 	if _, err := os.Stat(upperDir); err != nil {
 		return fmt.Errorf("runtime.Commit: no writable layer for container %s", id)
+	}
+	paused := false
+	if opts.Pause && state.Status == "running" {
+		if err := Pause(ctx, id); err == nil {
+			paused = true
+		}
+	}
+	if paused {
+		defer Unpause(ctx, id) //nolint:errcheck
 	}
 	sum := sha256.Sum256([]byte(newRef + id + time.Now().UTC().String()))
 	digest := "sha256:" + hex.EncodeToString(sum[:])
@@ -359,13 +470,19 @@ func Commit(ctx context.Context, id, newRef string) error {
 		return fmt.Errorf("runtime.Commit: copy: %w", err)
 	}
 	meta := struct {
-		Ref    string
-		Digest string
-		Layers []image.Layer
+		Ref     string
+		Digest  string
+		Layers  []image.Layer
+		Author  string `json:",omitempty"`
+		Message string `json:",omitempty"`
+		Created string `json:",omitempty"`
 	}{
-		Ref:    newRef,
-		Digest: digest,
-		Layers: []image.Layer{{Digest: digest, Path: layerDir}},
+		Ref:     newRef,
+		Digest:  digest,
+		Layers:  []image.Layer{{Digest: digest, Path: layerDir}},
+		Author:  opts.Author,
+		Message: opts.Message,
+		Created: time.Now().UTC().Format(time.RFC3339),
 	}
 	metaJSON, err := json.Marshal(meta)
 	if err != nil {
@@ -454,4 +571,78 @@ func copyDir(src, dst string) error {
 		_, err = io.Copy(out, in)
 		return err
 	})
+}
+
+// ParseRestartPolicy parses docker-style restart specs: no, always,
+// on-failure[:max], unless-stopped.
+func ParseRestartPolicy(spec string) (RestartPolicy, error) {
+	if spec == "" || spec == "no" {
+		return RestartPolicy{Name: "no"}, nil
+	}
+	name, maxStr, _ := strings.Cut(spec, ":")
+	max := 0
+	if maxStr != "" {
+		var err error
+		max, err = strconv.Atoi(maxStr)
+		if err != nil || max < 0 {
+			return RestartPolicy{}, fmt.Errorf("runtime: invalid restart max %q", maxStr)
+		}
+	}
+	switch name {
+	case "always", "on-failure", "unless-stopped":
+		return RestartPolicy{Name: name, MaxRetryAttempts: max}, nil
+	default:
+		return RestartPolicy{}, fmt.Errorf("runtime: invalid restart policy %q (no, always, on-failure[:max], unless-stopped)", spec)
+	}
+}
+
+// tryRestart relaunches an exited container per its restart policy.
+// Returns true when a restart was kicked off (caller must stop there).
+func tryRestart(ctx context.Context, id, containerDir string, state *ContainerState, cfg *ContainerConfig, exitCode int, log *zap.Logger) bool {
+	policy := ""
+	maxRetries := 0
+	if cfg != nil {
+		policy = cfg.RestartPolicy.Name
+		maxRetries = cfg.RestartPolicy.MaxRetryAttempts
+	}
+	// Count prior restarts from the state file.
+	restarts := 0
+	if data, err := os.ReadFile(filepath.Join(containerDir, "restarts")); err == nil {
+		restarts, _ = strconv.Atoi(strings.TrimSpace(string(data)))
+	}
+	should := false
+	switch policy {
+	case "always", "unless-stopped":
+		should = true
+	case "on-failure":
+		should = exitCode != 0
+	}
+	if !should {
+		return false
+	}
+	if maxRetries > 0 && restarts >= maxRetries {
+		log.Info("runtime: restart limit reached", telemetry.FieldString("containerID", id))
+		return false
+	}
+	restarts++
+	os.WriteFile(filepath.Join(containerDir, "restarts"), []byte(strconv.Itoa(restarts)), 0644) //nolint:errcheck
+	log.Info("runtime: restarting container",
+		telemetry.FieldString("containerID", id), telemetry.FieldInt("attempt", restarts))
+	events.Log("container", "restart", id, map[string]string{"attempt": strconv.Itoa(restarts)})
+
+	state.Status = "created"
+	state.PID = 0
+	if err := saveState(containerDir, state); err != nil {
+		log.Error("runtime: restart saveState failed", telemetry.FieldError(err))
+		return false
+	}
+	image.Unmount(ctx, id) //nolint:errcheck
+	if _, err := Start(ctx, id); err != nil {
+		log.Error("runtime: restart Start failed", telemetry.FieldError(err))
+		state.Status = "stopped"
+		state.ExitCode = exitCode
+		saveState(containerDir, state) //nolint:errcheck
+		return false
+	}
+	return true
 }

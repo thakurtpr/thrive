@@ -3,8 +3,10 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -19,9 +21,15 @@ func PluginCmd() *cobra.Command {
 	}
 
 	install := &cobra.Command{
-		Use: "install [name] [source]", Short: "Install a plugin from a directory or tarball", Args: cobra.ExactArgs(2),
+		Use: "install [name] [source]", Short: "Install a plugin from a directory, tarball, or image ref", Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			p, err := plugin.Install(args[0], args[1])
+			var p *plugin.Plugin
+			var err error
+			if _, statErr := os.Stat(args[1]); statErr == nil {
+				p, err = plugin.Install(args[0], args[1])
+			} else {
+				p, err = plugin.InstallFromRef(context.Background(), args[0], args[1])
+			}
 			if err != nil {
 				return err
 			}

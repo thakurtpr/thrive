@@ -25,6 +25,7 @@ func RunCmd() *cobra.Command {
 	var name string
 	var envVars []string
 	var secretNames []string
+	var configSpecs []string
 	var portSpecs []string
 	var volumeSpecs []string
 	var netMode string
@@ -79,12 +80,14 @@ func RunCmd() *cobra.Command {
 				Command:     containerArgs,
 				Env:         envVars,
 				Secrets:     secretNames,
+				Configs:     parseConfigSpecs(configSpecs),
 				Ports:       ports,
 				Mounts:      mounts,
 				NetworkMode: netMode,
 				TTY:         tty,
 				Interactive: interactive || tty, // -t implies -i
 			}
+			applyResourceFlags(cmd, &cfg)
 
 			container, err := runtime.Create(ctx, cfg)
 			if err != nil {
@@ -170,11 +173,13 @@ func RunCmd() *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "Container name")
 	cmd.Flags().StringArrayVarP(&envVars, "env", "e", nil, "Set environment variables")
 	cmd.Flags().StringArrayVar(&secretNames, "secret", nil, "Secrets to inject")
+	cmd.Flags().StringArrayVar(&configSpecs, "config", nil, "Config object mount: name:/container/path")
 	cmd.Flags().StringArrayVarP(&portSpecs, "publish", "p", nil, "Publish port(s): host:container[/proto]")
 	cmd.Flags().StringArrayVarP(&volumeSpecs, "volume", "v", nil, "Bind mount: /host:/container")
 	cmd.Flags().StringVar(&netMode, "network", "", "Network mode (host, none, or default bridge)")
 	cmd.Flags().BoolVarP(&tty, "tty", "t", false, "Allocate a pseudo-TTY")
 	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "Keep stdin open")
+	resourceFlags(cmd, new(string), new(string), new(float64), new(int64), new(int64))
 	// Stop flag parsing after the image name so container commands can include flags.
 	cmd.Flags().SetInterspersed(false)
 	return cmd
@@ -258,6 +263,62 @@ func parseVolumeSpecs(specs []string) ([]runtime.Mount, error) {
 		})
 	}
 	return mounts, nil
+}
+
+// parseConfigSpecs parses "name:/container/path" config mounts.
+func parseConfigSpecs(specs []string) []runtime.ConfigMount {
+	var out []runtime.ConfigMount
+	for _, spec := range specs {
+		idx := indexByte(spec, ':')
+		if idx < 0 {
+			continue
+		}
+		out = append(out, runtime.ConfigMount{Source: spec[:idx], Target: spec[idx+1:]})
+	}
+	return out
+}
+
+// resourceFlags registers --memory/--cpus/--cpu-shares/--pids-limit/--restart.
+func resourceFlags(cmd *cobra.Command, memStr, restartSpec *string, cpus *float64, cpuShares, pidsLimit *int64) {
+	cmd.Flags().StringVar(memStr, "memory", "", "Memory limit (e.g. 512m, 1g)")
+	cmd.Flags().Float64Var(cpus, "cpus", 0, "CPU count (e.g. 1.5)")
+	cmd.Flags().Int64Var(cpuShares, "cpu-shares", 0, "CPU shares (relative weight)")
+	cmd.Flags().Int64Var(pidsLimit, "pids-limit", 0, "Maximum number of processes")
+	cmd.Flags().StringVar(restartSpec, "restart", "no", "Restart policy (no, always, on-failure[:max], unless-stopped)")
+}
+
+// applyResourceFlags resolves resource flags into cfg. Exits non-zero on error.
+func applyResourceFlags(cmd *cobra.Command, cfg *runtime.ContainerConfig) {
+	memStr, _ := cmd.Flags().GetString("memory")
+	cpus, _ := cmd.Flags().GetFloat64("cpus")
+	cpuShares, _ := cmd.Flags().GetInt64("cpu-shares")
+	pidsLimit, _ := cmd.Flags().GetInt64("pids-limit")
+	restartSpec, _ := cmd.Flags().GetString("restart")
+	if memStr != "" {
+		v, err := parseMemory(memStr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: invalid --memory %q: %v\n", memStr, err)
+			os.Exit(1)
+		}
+		cfg.Resources.MemoryLimit = v
+	}
+	if cpus > 0 {
+		cfg.Resources.CPUQuota = int64(cpus * 100000)
+	}
+	if cpuShares > 0 {
+		cfg.Resources.CPUShares = cpuShares
+	}
+	if pidsLimit > 0 {
+		cfg.Resources.PIDsLimit = pidsLimit
+	}
+	if restartSpec != "" && restartSpec != "no" {
+		policy, err := runtime.ParseRestartPolicy(restartSpec)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+		cfg.RestartPolicy = policy
+	}
 }
 
 func parsePort(s string) (int, error) {

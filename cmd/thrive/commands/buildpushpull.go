@@ -149,6 +149,7 @@ func parseBuildArgs(args []string) (map[string]string, error) {
 
 func PushCmd() *cobra.Command {
 	var username, password string
+	var quiet bool
 
 	cmd := &cobra.Command{
 		Use:   "push [image]",
@@ -157,7 +158,9 @@ func PushCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			ctx := context.Background()
 			ref := args[0]
-			fmt.Printf("Pushing %s ...\n", ref)
+			if !quiet {
+				fmt.Printf("Pushing %s ...\n", ref)
+			}
 			if username == "" {
 				if c := registry.StoredAuth(registry.RegistryHost(ref)); c != nil {
 					username, password = c.Username, c.Password
@@ -170,16 +173,23 @@ func PushCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "Error pushing image: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Printf("Pushed: %s\n", ref)
+			if !quiet {
+				fmt.Printf("Pushed: %s\n", ref)
+			} else {
+				fmt.Println(ref)
+			}
 		},
 	}
 	cmd.Flags().StringVar(&username, "username", "", "Registry username")
 	cmd.Flags().StringVar(&password, "password", "", "Registry password")
+	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress progress output")
 	return cmd
 }
 
 func PullCmd() *cobra.Command {
-	var username, password string
+	var username, password, platform string
+	var quiet, allTags, verifyPull bool
+	var verifyKey string
 
 	cmd := &cobra.Command{
 		Use:   "pull [image]",
@@ -188,24 +198,56 @@ func PullCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			ctx := context.Background()
 			ref := args[0]
-			fmt.Printf("Pulling %s ...\n", ref)
+			if verifyPull && verifyKey == "" {
+				fmt.Fprintf(os.Stderr, "Error: --verify requires --verify-key <cosign.pub>\n")
+				os.Exit(1)
+			}
 			if username == "" {
 				if c := registry.StoredAuth(registry.RegistryHost(ref)); c != nil {
 					username, password = c.Username, c.Password
 				}
 			}
-			img, err := image.Pull(ctx, ref, image.PullOptions{
-				Username: username,
-				Password: password,
-			})
+			opts := image.PullOptions{Username: username, Password: password, Platform: platform}
+			if allTags {
+				refs, err := listRepoTags(ref, username, password)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error listing tags for %s: %v\n", ref, err)
+					os.Exit(1)
+				}
+				for _, r := range refs {
+					if !quiet {
+						fmt.Printf("Pulling %s ...\n", r)
+					}
+					img, err := image.Pull(ctx, r, opts)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "Error pulling image: %v\n", err)
+						os.Exit(1)
+					}
+					if !verifyPulledImage(ctx, r, img.Ref, img.Digest, username, password, verifyPull, verifyKey, quiet) {
+						os.Exit(1)
+					}
+				}
+				return
+			}
+			if !quiet {
+				fmt.Printf("Pulling %s ...\n", ref)
+			}
+			img, err := image.Pull(ctx, ref, opts)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error pulling image: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Printf("Pulled: %s@%s\n", img.Ref, img.Digest[:12])
+			if !verifyPulledImage(ctx, ref, img.Ref, img.Digest, username, password, verifyPull, verifyKey, quiet) {
+				os.Exit(1)
+			}
 		},
 	}
 	cmd.Flags().StringVar(&username, "username", "", "Registry username")
 	cmd.Flags().StringVar(&password, "password", "", "Registry password")
+	cmd.Flags().StringVar(&platform, "platform", "", "Platform (os/arch, e.g. linux/arm64)")
+	cmd.Flags().BoolVarP(&quiet, "quiet", "q", false, "Suppress progress output")
+	cmd.Flags().BoolVarP(&allTags, "all-tags", "a", false, "Pull all tagged images in the repository")
+	cmd.Flags().BoolVar(&verifyPull, "verify", false, "Verify cosign signature after pull (requires --verify-key)")
+	cmd.Flags().StringVar(&verifyKey, "verify-key", "", "PEM public key file for cosign verification")
 	return cmd
 }

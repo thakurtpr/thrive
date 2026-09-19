@@ -6,8 +6,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -20,6 +22,7 @@ func CreateCmd() *cobra.Command {
 	var name string
 	var envVars []string
 	var secretNames []string
+	var configSpecs []string
 	var portSpecs []string
 	var volumeSpecs []string
 	var netMode string
@@ -60,10 +63,12 @@ func CreateCmd() *cobra.Command {
 				Command:     containerArgs,
 				Env:         envVars,
 				Secrets:     secretNames,
+				Configs:     parseConfigSpecs(configSpecs),
 				Ports:       ports,
 				Mounts:      mounts,
 				NetworkMode: netMode,
 			}
+			applyResourceFlags(cmd, &cfg)
 			container, err := runtime.Create(ctx, cfg)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error creating container: %v\n", err)
@@ -75,9 +80,11 @@ func CreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "Container name")
 	cmd.Flags().StringArrayVarP(&envVars, "env", "e", nil, "Set environment variables")
 	cmd.Flags().StringArrayVar(&secretNames, "secret", nil, "Secrets to inject")
+	cmd.Flags().StringArrayVar(&configSpecs, "config", nil, "Config object mount: name:/container/path")
 	cmd.Flags().StringArrayVarP(&portSpecs, "publish", "p", nil, "Publish port(s): host:container[/proto]")
 	cmd.Flags().StringArrayVarP(&volumeSpecs, "volume", "v", nil, "Bind mount: /host:/container")
 	cmd.Flags().StringVar(&netMode, "network", "", "Network mode (host, none, or default bridge)")
+	resourceFlags(cmd, new(string), new(string), new(float64), new(int64), new(int64))
 	cmd.Flags().SetInterspersed(false)
 	return cmd
 }
@@ -147,7 +154,9 @@ func RenameCmd() *cobra.Command {
 	}
 }
 
-// StatsCmd shows live resource usage (docker stats parity, one-shot by default).
+// StatsCmd shows live resource usage (docker stats parity).
+// Default is a one-shot snapshot (--no-stream=true, thrive's historical
+// behavior). Pass --no-stream=false to poll every 2s until interrupted.
 func StatsCmd() *cobra.Command {
 	var noStream bool
 	cmd := &cobra.Command{
@@ -159,25 +168,46 @@ func StatsCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "Error: stats requires at least one container\n")
 				os.Exit(1)
 			}
-			fmt.Printf("%-13s %-9s %-12s %-12s %-6s %s\n", "CONTAINER ID", "STATUS", "MEM USAGE", "MEM LIMIT", "PIDS", "CPU USEC")
-			for _, id := range args {
-				s, err := runtime.Stats(ctx, id)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-					continue
-				}
-				short := s.ID
-				if len(short) > 12 {
-					short = short[:12]
-				}
-				fmt.Printf("%-13s %-9s %-12d %-12d %-6d %d\n",
-					short, s.Status, s.MemoryCurrent, s.MemoryLimit, s.PIDsCurrent, s.CPUUsageUsec)
+			if noStream {
+				printStatsSnapshot(ctx, args)
+				return
 			}
-			_ = noStream
+			streamCtx, stop := signal.NotifyContext(ctx, os.Interrupt)
+			defer stop()
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+			printStatsSnapshot(ctx, args)
+			for {
+				select {
+				case <-streamCtx.Done():
+					return
+				case <-ticker.C:
+					printStatsSnapshot(ctx, args)
+				}
+			}
 		},
 	}
-	cmd.Flags().BoolVar(&noStream, "no-stream", true, "Display only the current snapshot (streaming not yet supported)")
+	cmd.Flags().BoolVar(&noStream, "no-stream", true, "Display only the current snapshot (pass --no-stream=false to stream every 2s)")
 	return cmd
+}
+
+// printStatsSnapshot prints one stats table for ids; errors go to stderr
+// per-container so one missing container doesn't hide the rest.
+func printStatsSnapshot(ctx context.Context, ids []string) {
+	fmt.Printf("%-13s %-9s %-12s %-12s %-6s %s\n", "CONTAINER ID", "STATUS", "MEM USAGE", "MEM LIMIT", "PIDS", "CPU USEC")
+	for _, id := range ids {
+		s, err := runtime.Stats(ctx, id)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			continue
+		}
+		short := s.ID
+		if len(short) > 12 {
+			short = short[:12]
+		}
+		fmt.Printf("%-13s %-9s %-12d %-12d %-6d %d\n",
+			short, s.Status, s.MemoryCurrent, s.MemoryLimit, s.PIDsCurrent, s.CPUUsageUsec)
+	}
 }
 
 // UpdateCmd updates resource limits of a container live.
@@ -317,21 +347,25 @@ func ExportCmd() *cobra.Command {
 
 // CommitCmd snapshots a container as a new image.
 func CommitCmd() *cobra.Command {
-	var message string
+	var message, author string
+	var pause bool
 	cmd := &cobra.Command{
 		Use:   "commit [container] [new-image]",
 		Short: "Create a new image from a container's changes",
 		Args:  cobra.ExactArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := runtime.Commit(context.Background(), args[0], args[1]); err != nil {
+			if err := runtime.CommitWithOptions(context.Background(), args[0], args[1], runtime.CommitOptions{
+				Author: author, Message: message, Pause: pause,
+			}); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
 			fmt.Printf("committed %s as %s\n", args[0], args[1])
-			_ = message
 		},
 	}
-	cmd.Flags().StringVarP(&message, "message", "m", "", "Commit message (recorded for compatibility)")
+	cmd.Flags().StringVarP(&message, "message", "m", "", "Commit message (recorded in image manifest)")
+	cmd.Flags().StringVarP(&author, "author", "a", "", "Author (recorded in image manifest)")
+	cmd.Flags().BoolVarP(&pause, "pause", "p", true, "Pause the container during commit")
 	return cmd
 }
 

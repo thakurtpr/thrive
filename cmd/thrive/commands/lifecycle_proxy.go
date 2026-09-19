@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/thakurprasadrout/thrive/internal/vm"
@@ -95,28 +97,56 @@ func RenameCmd() *cobra.Command {
 	}
 }
 
-// StatsCmd proxies stats to the VM daemon.
+// StatsCmd proxies stats to the VM daemon. Default is a one-shot snapshot;
+// pass --no-stream=false to poll the daemon every 2s until interrupted.
 func StatsCmd() *cobra.Command {
-	return &cobra.Command{
+	var noStream bool
+	cmd := &cobra.Command{
 		Use:   "stats [container...]",
 		Short: "Display resource usage statistics for containers",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return fmt.Errorf("stats requires at least one container")
 			}
-			for _, id := range args {
-				data, err := vm.DialControl(cmd.Context(), "stats", []string{id}, nil)
-				if err != nil {
-					return fmt.Errorf("stats failed: %w", err)
-				}
-				var result map[string]any
-				json.Unmarshal(data, &result)
-				out, _ := json.MarshalIndent(result, "", "  ")
-				fmt.Println(string(out))
+			if noStream {
+				return printProxyStats(cmd, args)
 			}
-			return nil
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt)
+			defer stop()
+			ticker := time.NewTicker(2 * time.Second)
+			defer ticker.Stop()
+			if err := printProxyStats(cmd, args); err != nil {
+				return err
+			}
+			for {
+				select {
+				case <-ctx.Done():
+					return nil
+				case <-ticker.C:
+					if err := printProxyStats(cmd, args); err != nil {
+						return err
+					}
+				}
+			}
 		},
 	}
+	cmd.Flags().BoolVar(&noStream, "no-stream", true, "Display only the current snapshot (pass --no-stream=false to stream every 2s)")
+	return cmd
+}
+
+// printProxyStats fetches one stats snapshot per container from the daemon.
+func printProxyStats(cmd *cobra.Command, args []string) error {
+	for _, id := range args {
+		data, err := vm.DialControl(cmd.Context(), "stats", []string{id}, nil)
+		if err != nil {
+			return fmt.Errorf("stats failed: %w", err)
+		}
+		var result map[string]any
+		json.Unmarshal(data, &result)
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Println(string(out))
+	}
+	return nil
 }
 
 // UpdateCmd proxies update to the VM daemon.
@@ -254,16 +284,23 @@ func ExportCmd() *cobra.Command {
 
 // CommitCmd proxies commit to the VM daemon.
 func CommitCmd() *cobra.Command {
-	return &cobra.Command{
+	var message, author string
+	var pause bool
+	cmd := &cobra.Command{
 		Use:   "commit [container] [new-image]",
 		Short: "Create a new image from a container's changes",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if _, err := vm.DialControl(cmd.Context(), "commit", args, nil); err != nil {
+			opts := map[string]any{"message": message, "author": author, "pause": pause}
+			if _, err := vm.DialControl(cmd.Context(), "commit", args, opts); err != nil {
 				return fmt.Errorf("commit failed: %w", err)
 			}
 			fmt.Printf("committed %s as %s\n", args[0], args[1])
 			return nil
 		},
 	}
+	cmd.Flags().StringVarP(&message, "message", "m", "", "Commit message (recorded in image manifest)")
+	cmd.Flags().StringVarP(&author, "author", "a", "", "Author (recorded in image manifest)")
+	cmd.Flags().BoolVarP(&pause, "pause", "p", true, "Pause the container during commit")
+	return cmd
 }

@@ -200,19 +200,13 @@ type PruneReport struct {
 // unreferenced images and unused volumes.
 func Prune(opts PruneOptions) (*PruneReport, error) {
 	rep := &PruneReport{}
-	containers := scanContainers()
 
-	// Stopped containers.
-	for _, c := range containers {
-		if c.Status == "running" || c.Status == "paused" || c.Status == "created" {
-			continue
-		}
-		rep.SpaceReclaimed += dirSize(filepath.Join(containersDir, c.ID))
-		network.DetachContainer(c.ID)
-		if err := os.RemoveAll(filepath.Join(containersDir, c.ID)); err == nil {
-			rep.ContainersDeleted++
-		}
+	deleted, reclaimed, err := PruneContainers()
+	if err != nil {
+		return nil, err
 	}
+	rep.ContainersDeleted = deleted
+	rep.SpaceReclaimed += reclaimed
 
 	// Unused networks.
 	if removed, err := network.PruneNetworks(); err == nil {
@@ -221,27 +215,12 @@ func Prune(opts PruneOptions) (*PruneReport, error) {
 
 	// Images: only with --all (unreferenced by surviving containers).
 	if opts.AllImages {
-		ctx := context.Background()
-		used := map[string]bool{}
-		for _, c := range scanContainers() {
-			if c.Image != "" {
-				used[image.SafeRef(c.Image)] = true
-			}
+		deleted, reclaimed, err := PruneImages()
+		if err != nil {
+			return nil, err
 		}
-		if imgs, err := image.List(ctx); err == nil {
-			for _, img := range imgs {
-				safe := image.SafeRef(img.Ref)
-				if used[safe] {
-					continue
-				}
-				rep.SpaceReclaimed += dirSize(filepath.Join(imagesDir, safe))
-				// image.Remove addresses the raw ref path; the store uses
-				// SafeRef, so remove the store directory directly.
-				if err := os.RemoveAll(filepath.Join(imagesDir, safe)); err == nil {
-					rep.ImagesDeleted++
-				}
-			}
-		}
+		rep.ImagesDeleted = deleted
+		rep.SpaceReclaimed += reclaimed
 	}
 
 	// Volumes with --volumes.
@@ -262,4 +241,49 @@ func Prune(opts PruneOptions) (*PruneReport, error) {
 	}
 
 	return rep, nil
+}
+
+// PruneContainers removes stopped containers, returning count and bytes.
+func PruneContainers() (int, int64, error) {
+	var deleted int
+	var reclaimed int64
+	for _, c := range scanContainers() {
+		if c.Status == "running" || c.Status == "paused" || c.Status == "created" {
+			continue
+		}
+		reclaimed += dirSize(filepath.Join(containersDir, c.ID))
+		network.DetachContainer(c.ID)
+		if err := os.RemoveAll(filepath.Join(containersDir, c.ID)); err == nil {
+			deleted++
+		}
+	}
+	return deleted, reclaimed, nil
+}
+
+// PruneImages removes images unreferenced by surviving containers.
+func PruneImages() (int, int64, error) {
+	ctx := context.Background()
+	used := map[string]bool{}
+	for _, c := range scanContainers() {
+		if c.Image != "" {
+			used[image.SafeRef(c.Image)] = true
+		}
+	}
+	var deleted int
+	var reclaimed int64
+	if imgs, err := image.List(ctx); err == nil {
+		for _, img := range imgs {
+			safe := image.SafeRef(img.Ref)
+			if used[safe] {
+				continue
+			}
+			reclaimed += dirSize(filepath.Join(imagesDir, safe))
+			// image.Remove addresses the raw ref path; the store uses
+			// SafeRef, so remove the store directory directly.
+			if err := os.RemoveAll(filepath.Join(imagesDir, safe)); err == nil {
+				deleted++
+			}
+		}
+	}
+	return deleted, reclaimed, nil
 }

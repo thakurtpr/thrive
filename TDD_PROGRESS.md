@@ -4,7 +4,7 @@
 
 | Package | Test File | Coverage | Status | Notes |
 |---------|-----------|----------|--------|-------|
-| internal/runtime | runtime_test.go, lifecycle_test.go, runtime_extra_test.go | ~55% | improved | state roundtrip + 13 lifecycle error-path tests; live exec needs root |
+| internal/runtime | runtime_test.go, lifecycle_test.go, runtime_extra_test.go | ~55% | improved | state roundtrip + 13 lifecycle error-path tests; stats streaming is client-side ticker (unit: flag registration); live exec needs root |
 | internal/image | image_test.go | ~60% | improved | 31 tests: extractTar, chunk store, List, Mount/Unmount error paths, SafeRef |
 | internal/secrets | vault_test.go, vault_extra_test.go | ~70% | improved | roundtrip + wrong-key/corrupt/truncated edge cases + concurrency |
 | internal/telemetry | telemetry_test.go | ~50% | stable | concurrent safety verified via race detector |

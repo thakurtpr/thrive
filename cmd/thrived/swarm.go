@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/thakurprasadrout/thrive/internal/runtime"
 	"github.com/thakurprasadrout/thrive/internal/swarm"
@@ -87,11 +88,52 @@ func swarmServiceSpec(req *Request, imageRef string) (swarm.ServiceSpec, error) 
 	if v, ok := req.Opts["network"].(string); ok {
 		spec.NetworkMode = v
 	}
+	if v, ok := req.Opts["ports"].([]any); ok {
+		for _, e := range v {
+			if pm, ok := e.(map[string]any); ok {
+				spec.Ports = append(spec.Ports, runtime.PortMapping{
+					HostPort:      intOpt(pm, "host_port"),
+					ContainerPort: intOpt(pm, "container_port"),
+					Protocol:      stringOpt(pm, "protocol", "tcp"),
+				})
+			}
+		}
+	}
+	if v, ok := req.Opts["volumes"].([]any); ok {
+		for _, e := range v {
+			if s, ok := e.(string); ok {
+				src, dst := splitVolume(s)
+				spec.Mounts = append(spec.Mounts, runtime.Mount{
+					Source: resolveVolumeSource(src), Destination: dst,
+					Type: "bind", Options: []string{"rbind"},
+				})
+			}
+		}
+	}
+	if v, ok := req.Opts["secrets"].([]any); ok {
+		for _, e := range v {
+			if s, ok := e.(string); ok {
+				spec.Secrets = append(spec.Secrets, s)
+			}
+		}
+	}
+	if v, ok := req.Opts["configs"].([]any); ok {
+		for _, e := range v {
+			if s, ok := e.(string); ok {
+				if i := strings.Index(s, ":"); i > 0 {
+					spec.Configs = append(spec.Configs, runtime.ConfigMount{Source: s[:i], Target: s[i+1:]})
+				}
+			}
+		}
+	}
 	if v, ok := req.Opts["parallelism"].(float64); ok {
 		spec.Parallelism = int(v)
 	}
 	if v, ok := req.Opts["delay"].(float64); ok {
 		spec.DelaySecs = int(v)
+	}
+	if v, ok := req.Opts["restart"].(string); ok {
+		spec.Restart = v
 	}
 	return spec, nil
 }
@@ -335,8 +377,21 @@ func handleStackRm(ctx context.Context, req *Request, w io.Writer) {
 	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{}})
 }
 
-func parseScaleArg(s string) (string, int, bool) {
-	for i := 0; i < len(s); i++ {
+func intOpt(m map[string]any, key string) int {
+	if v, ok := m[key].(float64); ok {
+		return int(v)
+	}
+	return 0
+}
+
+func stringOpt(m map[string]any, key, def string) string {
+	if v, ok := m[key].(string); ok && v != "" {
+		return v
+	}
+	return def
+}
+
+func parseScaleArg(s string) (string, int, bool) {	for i := 0; i < len(s); i++ {
 		if s[i] == '=' {
 			var n int
 			if _, err := fmt.Sscanf(s[i+1:], "%d", &n); err != nil || n < 0 {

@@ -270,6 +270,32 @@ func dispatch(ctx context.Context, req *Request, w io.Writer) {
 		handleBuildxDu(ctx, req, w)
 	case "buildx-prune":
 		handleBuildxPrune(ctx, req, w)
+	case "version":
+		handleVersion(ctx, req, w)
+	case "attach":
+		handleAttach(ctx, req, w)
+	case "swarm-node-ls":
+		handleSwarmNodeLs(ctx, req, w)
+	case "swarm-node-inspect":
+		handleSwarmNodeInspect(ctx, req, w)
+	case "swarm-node-promote":
+		handleSwarmNodePromote(ctx, req, w)
+	case "swarm-node-demote":
+		handleSwarmNodeDemote(ctx, req, w)
+	case "swarm-node-ps":
+		handleSwarmNodePs(ctx, req, w)
+	case "config-create":
+		handleConfigCreate(ctx, req, w)
+	case "config-ls":
+		handleConfigLs(ctx, req, w)
+	case "config-inspect":
+		handleConfigInspect(ctx, req, w)
+	case "config-rm":
+		handleConfigRm(ctx, req, w)
+	case "image-prune":
+		handleImagePrune(ctx, req, w)
+	case "container-prune":
+		handleContainerPrune(ctx, req, w)
 	case "ping":
 		writeResponse(w, &Response{ID: req.ID, Result: map[string]any{"ok": true}})
 	default:
@@ -432,9 +458,47 @@ func handlePull(ctx context.Context, req *Request, w io.Writer) {
 	}
 	ref := req.Args[0]
 	log.Printf("thrived: pulling %s", ref)
+	// Cosign verification is host-side: the PEM key file lives on the
+	// client, not in the VM. The Windows/macOS clients verify after a
+	// successful pull and remove the image on failure. Reject explicitly
+	// so a future client never silently skips verification.
+	if v, _ := req.Opts["verify"].(bool); v {
+		sendError(w, req.ID, 1, "pull: --verify is handled host-side by the thrive client (key file lives on the host), not by thrived")
+		return
+	}
 	username, _ := req.Opts["username"].(string)
 	password, _ := req.Opts["password"].(string)
-	img, err := image.Pull(ctx, ref, image.PullOptions{Username: username, Password: password})
+	platform, _ := req.Opts["platform"].(string)
+	if platform != "" {
+		if _, err := image.ParsePlatform(platform); err != nil {
+			sendError(w, req.ID, 1, err.Error())
+			return
+		}
+	}
+	pullOpts := image.PullOptions{Username: username, Password: password, Platform: platform}
+	if allTags, _ := req.Opts["all_tags"].(bool); allTags {
+		tags, err := registry.ListRepoTags(ctx, ref, username, password)
+		if err != nil {
+			sendError(w, req.ID, 1, fmt.Sprintf("pull %s: list tags: %v", ref, err))
+			return
+		}
+		pulled := 0
+		for _, r := range tags {
+			if _, err := image.Pull(ctx, r, pullOpts); err != nil {
+				sendError(w, req.ID, 1, fmt.Sprintf("pull %s: %v", r, err))
+				return
+			}
+			pulled++
+		}
+		writeResponse(w, &Response{
+			ID: req.ID,
+			Result: map[string]any{
+				"ref": ref, "pulled": pulled,
+			},
+		})
+		return
+	}
+	img, err := image.Pull(ctx, ref, pullOpts)
 	if err != nil {
 		sendError(w, req.ID, 1, fmt.Sprintf("pull %s: %v", ref, err))
 		return
@@ -534,15 +598,43 @@ func handleRun(ctx context.Context, req *Request, w io.Writer) {
 		containerID = generateID()
 	}
 
+	var secretNames []string
+	if secretsRaw, ok := req.Opts["secrets"].([]any); ok {
+		for _, e := range secretsRaw {
+			if s, ok := e.(string); ok {
+				secretNames = append(secretNames, s)
+			}
+		}
+	}
+
+	var configMounts []runtime.ConfigMount
+	if configsRaw, ok := req.Opts["configs"].([]any); ok {
+		for _, e := range configsRaw {
+			if s, ok := e.(string); ok {
+				if i := strings.Index(s, ":"); i > 0 {
+					configMounts = append(configMounts, runtime.ConfigMount{Source: s[:i], Target: s[i+1:]})
+				}
+			}
+		}
+	}
+
 	netMode, _ := req.Opts["network"].(string)
 	cfg := runtime.ContainerConfig{
 		ID:          containerID,
 		Image:       imageRef,
 		Command:     cmd,
 		Env:         envVars,
+		Secrets:     secretNames,
+		Configs:     configMounts,
 		Ports:       ports,
 		Mounts:      mounts,
 		NetworkMode: netMode,
+		Resources:   resourceLimitsFromOpts(req.Opts),
+	}
+	if restartSpec, _ := req.Opts["restart"].(string); restartSpec != "" {
+		if policy, err := runtime.ParseRestartPolicy(restartSpec); err == nil {
+			cfg.RestartPolicy = policy
+		}
 	}
 
 	if _, err := runtime.Create(ctx, cfg); err != nil {
@@ -577,6 +669,20 @@ func handleLogs(ctx context.Context, req *Request, w io.Writer) {
 	}
 	containerID := req.Args[0]
 	follow, _ := req.Opts["follow"].(bool)
+	// Daemonless log files carry no per-line timestamps; refuse time
+	// filters explicitly rather than returning misleading subsets.
+	if since, _ := req.Opts["since"].(string); since != "" {
+		sendError(w, req.ID, 1, "logs: --since requires per-line timestamps, which thrive's daemonless log files do not record")
+		return
+	}
+	if until, _ := req.Opts["until"].(string); until != "" {
+		sendError(w, req.ID, 1, "logs: --until requires per-line timestamps, which thrive's daemonless log files do not record")
+		return
+	}
+	if ts, _ := req.Opts["timestamps"].(bool); ts {
+		sendError(w, req.ID, 1, "logs: --timestamps requires per-line timestamps, which thrive's daemonless log files do not record")
+		return
+	}
 
 	logPath := filepath.Join("/run/thrive/containers", containerID, "logs")
 	f, err := os.Open(logPath)
@@ -635,6 +741,24 @@ func handleExec(ctx context.Context, req *Request, w io.Writer) {
 	if state.PID == 0 || state.Status != "running" {
 		sendError(w, req.ID, 1, "container is not running")
 		return
+	}
+
+	// Optional env/workdir (docker exec -e/-w parity). Env uses the env(1)
+	// prefix; workdir uses a sh cd+exec wrapper (no nsenter version dependency).
+	var envVars []string
+	if envRaw, ok := req.Opts["env"].([]any); ok {
+		for _, e := range envRaw {
+			if s, ok := e.(string); ok {
+				envVars = append(envVars, s)
+			}
+		}
+	}
+	if len(envVars) > 0 {
+		cmd = append(append([]string{"env"}, envVars...), cmd...)
+	}
+	if workdir, _ := req.Opts["workdir"].(string); workdir != "" {
+		script := "cd '" + strings.ReplaceAll(workdir, "'", "'\"'\"'") + "' && exec \"$@\""
+		cmd = append([]string{"/bin/sh", "-c", script, "thrive-exec"}, cmd...)
 	}
 
 	var execCmd *exec.Cmd
@@ -905,6 +1029,14 @@ func listContainers() ([]map[string]any, error) {
 		var state map[string]any
 		if err := json.Unmarshal(stateData, &state); err != nil {
 			continue
+		}
+		if configData, err := os.ReadFile(filepath.Join("/run/thrive/containers", entry.Name(), "config.json")); err == nil {
+			var cfg map[string]any
+			if err := json.Unmarshal(configData, &cfg); err == nil {
+				if img, ok := cfg["Image"].(string); ok {
+					state["image"] = img
+				}
+			}
 		}
 		containers = append(containers, state)
 	}
@@ -1217,7 +1349,17 @@ func handleCommit(ctx context.Context, req *Request, w io.Writer) {
 		sendError(w, req.ID, 1, "commit requires container ID and image ref")
 		return
 	}
-	if err := runtime.Commit(ctx, req.Args[0], req.Args[1]); err != nil {
+	opts := runtime.CommitOptions{Pause: true}
+	if author, _ := req.Opts["author"].(string); author != "" {
+		opts.Author = author
+	}
+	if message, _ := req.Opts["message"].(string); message != "" {
+		opts.Message = message
+	}
+	if pause, ok := req.Opts["pause"].(bool); ok {
+		opts.Pause = pause
+	}
+	if err := runtime.CommitWithOptions(ctx, req.Args[0], req.Args[1], opts); err != nil {
 		sendError(w, req.ID, 1, err.Error())
 		return
 	}
@@ -1621,6 +1763,24 @@ func parseEventTimeOpt(s string, now time.Time) (time.Time, error) {
 		return time.Unix(n, 0).UTC(), nil
 	}
 	return time.Time{}, fmt.Errorf("unrecognized time %q", s)
+}
+
+// resourceLimitsFromOpts parses memory/cpus/shares/pids daemon opts.
+func resourceLimitsFromOpts(opts map[string]any) runtime.ResourceLimits {
+	var r runtime.ResourceLimits
+	if v, ok := opts["memory"].(string); ok && v != "" {
+		r.MemoryLimit = parseMemoryOpt(v)
+	}
+	if v, ok := opts["cpus"].(float64); ok && v > 0 {
+		r.CPUQuota = int64(v * 100000)
+	}
+	if v, ok := opts["cpu_shares"].(float64); ok && v > 0 {
+		r.CPUShares = int64(v)
+	}
+	if v, ok := opts["pids_limit"].(float64); ok && v > 0 {
+		r.PIDsLimit = int64(v)
+	}
+	return r
 }
 
 // tailCount extracts an optional --tail line count from the request.

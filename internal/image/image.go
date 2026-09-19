@@ -160,8 +160,15 @@ func Pull(ctx context.Context, ref string, opts PullOptions) (*Image, error) {
 	telemetry.Debug("image.Pull: auth configured", telemetry.FieldBool("hasAuth", auth != nil))
 
 	// Select the platform that matches the running binary so container images
-	// execute natively without QEMU emulation.
+	// execute natively without QEMU emulation (overridable via --platform).
 	platform := v1.Platform{OS: "linux", Architecture: runtime.GOARCH}
+	if opts.Platform != "" {
+		p, err := ParsePlatform(opts.Platform)
+		if err != nil {
+			return nil, fmt.Errorf("image.Pull: %w", err)
+		}
+		platform = p
+	}
 
 	log.Info("image.Pull: fetching image from registry", telemetry.FieldString("ref", ref), telemetry.FieldString("platform", runtime.GOARCH))
 	descriptor, err := remote.Get(parsed, remote.WithAuth(auth), remote.WithPlatform(platform))

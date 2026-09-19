@@ -50,8 +50,16 @@ func Pull(ctx context.Context, ref string, opts PullOptions) (*Image, error) {
 		auth = &authn.Basic{Username: opts.Username, Password: opts.Password}
 	}
 
-	// Pull linux/arm64 — the Thrive VM runs on Apple Silicon (arm64 Linux)
+	// Pull linux/arm64 — the Thrive VM runs on Apple Silicon (arm64 Linux).
+	// Overridable via --platform for foreign-arch inspection.
 	platform := v1.Platform{OS: "linux", Architecture: "arm64"}
+	if opts.Platform != "" {
+		p, err := ParsePlatform(opts.Platform)
+		if err != nil {
+			return nil, fmt.Errorf("image.Pull: %w", err)
+		}
+		platform = p
+	}
 	descriptor, err := remote.Get(parsed,
 		remote.WithAuth(auth),
 		remote.WithContext(ctx),

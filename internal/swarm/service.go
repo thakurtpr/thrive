@@ -22,11 +22,14 @@ type ServiceSpec struct {
 	Image       string                `json:"image"`
 	Command     []string              `json:"command,omitempty"`
 	Env         []string              `json:"env,omitempty"`
+	Secrets     []string              `json:"secrets,omitempty"`
+	Configs     []runtime.ConfigMount `json:"configs,omitempty"`
 	Replicas    int                   `json:"replicas"`
 	Ports       []runtime.PortMapping `json:"ports,omitempty"`
 	Mounts      []runtime.Mount       `json:"mounts,omitempty"`
-	NetworkMode string                `json:"networkMode,omitempty"`
-	Parallelism int                   `json:"parallelism,omitempty"`
+	NetworkMode string            `json:"networkMode,omitempty"`
+	Restart     string            `json:"restart,omitempty"`
+	Parallelism int               `json:"parallelism,omitempty"`
 	DelaySecs   int                   `json:"delaySecs,omitempty"`
 }
 
@@ -277,9 +280,16 @@ func startReplica(ctx context.Context, svc *Service, index int) error {
 		Image:       svc.Spec.Image,
 		Command:     svc.Spec.Command,
 		Env:         svc.Spec.Env,
+		Secrets:     svc.Spec.Secrets,
+		Configs:     svc.Spec.Configs,
 		Ports:       svc.Spec.Ports,
 		Mounts:      svc.Spec.Mounts,
 		NetworkMode: svc.Spec.NetworkMode,
+	}
+	if svc.Spec.Restart != "" {
+		if policy, err := runtime.ParseRestartPolicy(svc.Spec.Restart); err == nil {
+			cfg.RestartPolicy = policy
+		}
 	}
 	if _, err := runtime.Create(ctx, cfg); err != nil {
 		return fmt.Errorf("create %s: %w", id, err)

@@ -17,6 +17,15 @@ func LogsCmd() *cobra.Command {
 		Short: "Fetch container logs",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if since, _ := cmd.Flags().GetString("since"); since != "" {
+				return fmt.Errorf("logs: --since requires per-line timestamps, which thrive's daemonless log files do not record")
+			}
+			if until, _ := cmd.Flags().GetString("until"); until != "" {
+				return fmt.Errorf("logs: --until requires per-line timestamps, which thrive's daemonless log files do not record")
+			}
+			if ts, _ := cmd.Flags().GetBool("timestamps"); ts {
+				return fmt.Errorf("logs: --timestamps requires per-line timestamps, which thrive's daemonless log files do not record")
+			}
 			ctx := cmd.Context()
 			containerID := args[0]
 			follow, _ := cmd.Flags().GetBool("follow")
@@ -50,5 +59,8 @@ func LogsCmd() *cobra.Command {
 
 	logs.Flags().BoolP("follow", "f", false, "Follow log output")
 	logs.Flags().Int("tail", 0, "Number of lines to show from the end of the logs (0 = all)")
+	logs.Flags().String("since", "", "Show logs since timestamp (not supported: no per-line timestamps recorded)")
+	logs.Flags().String("until", "", "Show logs before timestamp (not supported: no per-line timestamps recorded)")
+	logs.Flags().BoolP("timestamps", "t", false, "Show timestamps (not supported: no per-line timestamps recorded)")
 	return logs
 }

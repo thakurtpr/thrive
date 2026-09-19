@@ -118,6 +118,25 @@ func TestRename_ExistingTarget(t *testing.T) {
 	}
 }
 
+// TestDiff_MissingContainer verifies Diff returns no changes for unknown IDs.
+func TestDiff_MissingContainer(t *testing.T) {
+	changes, err := Diff(context.Background(), "nonexistent-thrive-test-diff")
+	if err != nil {
+		t.Fatalf("Diff: unexpected error: %v", err)
+	}
+	if len(changes) != 0 {
+		t.Errorf("Diff: expected 0 changes, got %d", len(changes))
+	}
+}
+
+// TestCommitWithOptions_EmptyRef verifies CommitWithOptions rejects empty refs.
+func TestCommitWithOptions_EmptyRef(t *testing.T) {
+	err := CommitWithOptions(context.Background(), "nonexistent-thrive-test-commit", "", CommitOptions{Author: "a", Message: "m", Pause: true})
+	if err == nil {
+		t.Error("CommitWithOptions: expected error for empty ref, got nil")
+	}
+}
+
 type discardTestWriter struct{}
 
 func (discardTestWriter) Write(p []byte) (int, error) { return len(p), nil }

@@ -8,6 +8,7 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/thakurprasadrout/thrive/internal/image"
 	"github.com/thakurprasadrout/thrive/internal/registry"
 )
 
@@ -84,6 +86,37 @@ func Install(name, src string) (*Plugin, error) {
 		if err != nil {
 			os.RemoveAll(pluginDir(name)) //nolint:errcheck
 			return nil, fmt.Errorf("plugin: extract: %w", err)
+		}
+	}
+	p := &Plugin{Name: name, Created: time.Now().UTC()}
+	if err := writePlugin(p); err != nil {
+		os.RemoveAll(pluginDir(name)) //nolint:errcheck
+		return nil, err
+	}
+	return p, nil
+}
+
+// InstallFromRef pulls an OCI image and unions its extracted layers into the
+// plugin rootfs (later layers overwrite earlier ones).
+func InstallFromRef(ctx context.Context, name, ref string) (*Plugin, error) {
+	if !validName(name) {
+		return nil, fmt.Errorf("plugin: invalid name %q", name)
+	}
+	if _, err := os.Stat(metaPath(name)); err == nil {
+		return nil, fmt.Errorf("plugin: %s already exists", name)
+	}
+	img, err := image.Pull(ctx, ref, image.PullOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("plugin: pull %s: %w", ref, err)
+	}
+	rootfs := filepath.Join(pluginDir(name), "rootfs")
+	if err := os.MkdirAll(rootfs, 0755); err != nil {
+		return nil, fmt.Errorf("plugin: mkdir: %w", err)
+	}
+	for _, l := range img.Layers {
+		if err := copyTree(l.Path, rootfs); err != nil {
+			os.RemoveAll(pluginDir(name)) //nolint:errcheck
+			return nil, fmt.Errorf("plugin: layer %s: %w", l.Digest, err)
 		}
 	}
 	p := &Plugin{Name: name, Created: time.Now().UTC()}
