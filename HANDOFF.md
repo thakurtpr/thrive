@@ -5,6 +5,32 @@
 
 ---
 
+## Session 2026-09-19 — Coverage: shared ps filter helper
+
+### What was done
+Deduped `thrive ps` filtering (identical logic in `ps.go` linux +
+`ps_proxy.go` !linux, both untested) into one portable helper with
+table tests that run on every platform including the CI darwin job.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `psRow` + `filterPsRows` + `psRowMap` shared helper (no build tag) | `cmd/thrive/commands/ps_shared.go` (new) |
+| 2 | Linux `applyPsFilters`/`psEntryMap` delegate to shared helper; dropped now-unused `strings` import | `cmd/thrive/commands/ps.go` |
+| 3 | Proxy row-filter/format branches use shared helper; dropped `strings` import | `cmd/thrive/commands/ps_proxy.go` |
+| 4 | 5 portable tests (14 subcases): default/all, status/name/image, combined, malformed/unknown/empty filters, empty input, format mapping | `cmd/thrive/commands/ps_shared_test.go` (new) |
+
+### Verification
+- New tests 5/5 PASS (host); full `go test ./...` 0 FAIL
+- `go build` + `go vet` CLEAN on host/linux/windows; `go test -c` compiles for linux+windows commands suites
+- gofmt clean on all touched files; behavior identical (pure refactor, no flag/output changes)
+
+### Next
+- Same dedupe pattern applies to `stats` one-shot printing (linux vs proxy) if touched again
+- Live Linux CI run on push (cgroup/overlay/veth paths can't execute on macOS)
+- `stats` default flip to streaming left as a deliberate breaking change for later
+
+---
+
 ## Session 2026-09-19 — R3: cosign verify parity + stats streaming
 
 ### What was done

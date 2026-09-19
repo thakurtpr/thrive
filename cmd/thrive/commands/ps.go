@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -98,42 +97,22 @@ func listPsEntries() []psEntry {
 	return out
 }
 
-// applyPsFilters filters by status=/name=/image= and drops stopped unless all.
+// applyPsFilters filters by status=/name=/image= and drops stopped unless
+// all. Delegates to the shared portable helper so Linux and the VM-daemon
+// proxy filter identically.
 func applyPsFilters(entries []psEntry, filters []string, all bool) []psEntry {
-	var status, name, image string
-	for _, f := range filters {
-		k, v, ok := strings.Cut(f, "=")
-		if !ok {
-			continue
-		}
-		switch strings.TrimSpace(k) {
-		case "status":
-			status = v
-		case "name":
-			name = v
-		case "image":
-			image = v
-		}
-	}
-	var out []psEntry
+	rows := make([]psRow, 0, len(entries))
 	for _, e := range entries {
-		if !all && e.Status == "stopped" {
-			continue
-		}
-		if status != "" && e.Status != status {
-			continue
-		}
-		if name != "" && !strings.Contains(e.ID, name) {
-			continue
-		}
-		if image != "" && !strings.Contains(e.Image, image) {
-			continue
-		}
-		out = append(out, e)
+		rows = append(rows, psRow{ID: e.ID, Image: e.Image, Status: e.Status, PID: e.PID})
+	}
+	kept := filterPsRows(rows, filters, all)
+	out := make([]psEntry, 0, len(kept))
+	for _, r := range kept {
+		out = append(out, psEntry{ID: r.ID, Image: r.Image, Status: r.Status, PID: r.PID})
 	}
 	return out
 }
 
 func psEntryMap(e psEntry) map[string]any {
-	return map[string]any{"id": e.ID, "image": e.Image, "status": e.Status, "pid": e.PID}
+	return psRowMap(psRow{ID: e.ID, Image: e.Image, Status: e.Status, PID: e.PID})
 }

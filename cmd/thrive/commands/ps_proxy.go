@@ -5,7 +5,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/thakurprasadrout/thrive/internal/vm"
@@ -28,11 +27,7 @@ func PsCmd() *cobra.Command {
 			json.Unmarshal(data, &result) //nolint:errcheck
 
 			containers, _ := result["containers"].([]any)
-			type row struct {
-				id, image, status string
-				pid               int
-			}
-			var rows []row
+			var rows []psRow
 			for _, c := range containers {
 				cm, ok := c.(map[string]any)
 				if !ok {
@@ -48,52 +43,20 @@ func PsCmd() *cobra.Command {
 				if pf, ok := cm["pid"].(float64); ok {
 					pid = int(pf)
 				}
-				rows = append(rows, row{id, image, status, pid})
+				rows = append(rows, psRow{id, image, status, pid})
 			}
 
-			var fStatus, fName, fImage string
-			for _, f := range filters {
-				k, v, ok := strings.Cut(f, "=")
-				if !ok {
-					continue
-				}
-				switch strings.TrimSpace(k) {
-				case "status":
-					fStatus = v
-				case "name":
-					fName = v
-				case "image":
-					fImage = v
-				}
-			}
-			var kept []row
-			for _, r := range rows {
-				if !allFlag && r.status == "stopped" {
-					continue
-				}
-				if fStatus != "" && r.status != fStatus {
-					continue
-				}
-				if fName != "" && !strings.Contains(r.id, fName) {
-					continue
-				}
-				if fImage != "" && !strings.Contains(r.image, fImage) {
-					continue
-				}
-				kept = append(kept, r)
-			}
+			kept := filterPsRows(rows, filters, allFlag)
 
 			if quiet {
 				for _, r := range kept {
-					fmt.Println(r.id)
+					fmt.Println(r.ID)
 				}
 				return nil
 			}
 			if format != "" {
 				for _, r := range kept {
-					out, err := renderFormat(format, map[string]any{
-						"id": r.id, "image": r.image, "status": r.status, "pid": r.pid,
-					})
+					out, err := renderFormat(format, psRowMap(r))
 					if err != nil {
 						return err
 					}
@@ -108,11 +71,11 @@ func PsCmd() *cobra.Command {
 			fmt.Printf("%-13s %-20s %-10s %s\n", "CONTAINER ID", "IMAGE", "STATUS", "PID")
 			fmt.Println("────────────────────────────────────────────────────")
 			for _, r := range kept {
-				id := r.id
+				id := r.ID
 				if len(id) > 12 {
 					id = id[:12]
 				}
-				fmt.Printf("%-13s %-20s %-10s %d\n", id, r.image, r.status, r.pid)
+				fmt.Printf("%-13s %-20s %-10s %d\n", id, r.Image, r.Status, r.PID)
 			}
 			return nil
 		},
