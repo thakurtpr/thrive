@@ -60,6 +60,21 @@ func TestCommitCmd_R2Flags(t *testing.T) {
 	}
 }
 
+// TestCreateCmd_ParityFlags verifies the create proxy registers every flag
+// Linux create accepts, so scripts don't hit "unknown flag" on macOS/Windows.
+// Must match TestCreateCmd_Flags (linux) — change both together.
+func TestCreateCmd_ParityFlags(t *testing.T) {
+	cmd := commands.CreateCmd()
+	for _, flagName := range []string{
+		"name", "env", "secret", "config", "publish", "volume", "network",
+		"memory", "cpus", "cpu-shares", "pids-limit", "restart",
+	} {
+		if f := cmd.Flags().Lookup(flagName); f == nil {
+			t.Errorf("CreateCmd proxy: missing --%s flag", flagName)
+		}
+	}
+}
+
 // TestPullCmd_R3Flags verifies the pull proxy exposes verify + stats
 // streaming parity flags on non-Linux platforms.
 func TestPullCmd_R3Flags(t *testing.T) {

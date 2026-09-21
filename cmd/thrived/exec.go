@@ -1176,7 +1176,70 @@ func handleCreate(ctx context.Context, req *Request, w io.Writer) {
 			}
 		}
 	}
-	cfg := runtime.ContainerConfig{ID: containerID, Image: imageRef, Command: cmdArgs, Env: envVars}
+	// Honor the same opts as handleRun (proxy forwards create flags here).
+	var ports []runtime.PortMapping
+	if portsRaw, ok := req.Opts["ports"].([]any); ok {
+		for _, p := range portsRaw {
+			if pm, ok := p.(map[string]any); ok {
+				ports = append(ports, runtime.PortMapping{
+					HostPort:      intOpt(pm, "host_port"),
+					ContainerPort: intOpt(pm, "container_port"),
+					Protocol:      stringOrDefault(pm["protocol"], "tcp"),
+				})
+			}
+		}
+	}
+	var mounts []runtime.Mount
+	if mountsRaw, ok := req.Opts["volumes"].([]any); ok {
+		for _, m := range mountsRaw {
+			if ms, ok := m.(string); ok {
+				src, dst := splitVolume(ms)
+				src = resolveVolumeSource(src)
+				mounts = append(mounts, runtime.Mount{
+					Source:      src,
+					Destination: dst,
+					Type:        "bind",
+					Options:     []string{"rbind"},
+				})
+			}
+		}
+	}
+	var secretNames []string
+	if secretsRaw, ok := req.Opts["secrets"].([]any); ok {
+		for _, e := range secretsRaw {
+			if s, ok := e.(string); ok {
+				secretNames = append(secretNames, s)
+			}
+		}
+	}
+	var configMounts []runtime.ConfigMount
+	if configsRaw, ok := req.Opts["configs"].([]any); ok {
+		for _, e := range configsRaw {
+			if s, ok := e.(string); ok {
+				if i := strings.Index(s, ":"); i > 0 {
+					configMounts = append(configMounts, runtime.ConfigMount{Source: s[:i], Target: s[i+1:]})
+				}
+			}
+		}
+	}
+	netMode, _ := req.Opts["network"].(string)
+	cfg := runtime.ContainerConfig{
+		ID:          containerID,
+		Image:       imageRef,
+		Command:     cmdArgs,
+		Env:         envVars,
+		Secrets:     secretNames,
+		Configs:     configMounts,
+		Ports:       ports,
+		Mounts:      mounts,
+		NetworkMode: netMode,
+		Resources:   resourceLimitsFromOpts(req.Opts),
+	}
+	if restartSpec, _ := req.Opts["restart"].(string); restartSpec != "" {
+		if policy, err := runtime.ParseRestartPolicy(restartSpec); err == nil {
+			cfg.RestartPolicy = policy
+		}
+	}
 	if _, err := runtime.Create(ctx, cfg); err != nil {
 		sendError(w, req.ID, 1, err.Error())
 		return

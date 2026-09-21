@@ -5,6 +5,31 @@
 
 ---
 
+## Session 2026-09-19 — Parity: create flags end-to-end (proxy + daemon)
+
+### What was done
+Flag audit of run/exec/create found one gap: proxy `create` registered
+zero flags (any `--name`/`-e`/etc. errored `unknown flag` on macOS/Windows)
+and sent nil opts, while the daemon honored only `name`/`env`. `run` and
+`exec` were already at parity — verified, not changed.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | Proxy `CreateCmd`: all 12 Linux flags + `SetInterspersed(false)`; forwards name/env/secrets/configs/ports/volumes/network/memory/cpus/cpu-shares/pids-limit/restart | `lifecycle_proxy.go` |
+| 2 | Daemon `handleCreate` honors secrets/configs/ports/volumes/network/resources/restart (mirrors `handleRun`) | `cmd/thrived/exec.go` |
+| 3 | Parity-locking tests: same 12-flag list asserted on Linux and proxy (comment cross-links both — change together) | `commands_phase_test.go`, `lifecycle_proxy_test.go` |
+
+### Verification
+- New tests PASS (host proxy test live; linux test compile-checked)
+- Full `go test ./...` 13 ok, 0 FAIL; `go build` + `go vet` CLEAN host/linux/windows; `go test -c` compiles linux commands+thrived, windows commands
+- gofmt clean; live create-path needs Linux CI (VM daemon)
+
+### Next
+- Push — CI (linux race + coverage, e2e) only runs on push/PR
+- `stats` default flip to streaming left as a deliberate breaking change for later
+
+---
+
 ## Session 2026-09-19 — Coverage: shared top/port/diff helpers + port-filter fix
 
 ### What was done

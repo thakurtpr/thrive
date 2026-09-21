@@ -110,6 +110,20 @@ func TestSplitScale(t *testing.T) {
 	}
 }
 
+// TestCreateCmd_Flags verifies Linux create exposes the full flag set.
+// Must match TestCreateCmd_ParityFlags (proxy) — change both together.
+func TestCreateCmd_Flags(t *testing.T) {
+	cmd := CreateCmd()
+	for _, flagName := range []string{
+		"name", "env", "secret", "config", "publish", "volume", "network",
+		"memory", "cpus", "cpu-shares", "pids-limit", "restart",
+	} {
+		if f := cmd.Flags().Lookup(flagName); f == nil {
+			t.Errorf("CreateCmd: missing --%s flag", flagName)
+		}
+	}
+}
+
 // TestR2FlagDepth verifies R2 Docker-parity flags exist.
 func TestR2FlagDepth(t *testing.T) {
 	for _, flagName := range []string{"platform", "quiet", "all-tags", "verify", "verify-key"} {
