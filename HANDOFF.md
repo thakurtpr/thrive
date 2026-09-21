@@ -5,6 +5,32 @@
 
 ---
 
+## Session 2026-09-19 — Coverage: shared stats + images helpers
+
+### What was done
+Extended the ps dedupe pattern to `stats` and `images`: unified output
+across platforms, fixed a latent Linux panic, all via portable helpers
+with table tests (run on every platform incl. the CI darwin job).
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `statsRow` + `formatStatsTable` + `statsStr`/`statsNum` shared helper (no build tag); proxy now prints the Linux table instead of per-container JSON | `stats_shared.go` (new), `lifecycle_proxy.go`, `lifecycle.go` |
+| 2 | `truncateDigest` shared helper; fixed Linux `images` unsafe `img.Digest[:12]` slice (panics on short digests); darwin + `shortDigest` delegate to it | `images_shared.go` (new), `images.go`, `images_stub.go`, `distribution_shared.go` |
+| 3 | 7 portable tests (20+ subcases): table layout, ID truncation, empty rows, JSON number coercions, digest widths incl. empty | `stats_shared_test.go`, `images_shared_test.go` (new) |
+
+### Verification
+- New tests 7/7 PASS (host); full `go test ./...` 13 ok, 0 FAIL
+- `go build` + `go vet` CLEAN on host/linux/windows/darwin; `go test -c` compiles for linux+windows commands suites
+- gofmt clean on all touched files
+- Behavior changes (documented, toward parity): proxy `stats` prints tables not JSON; Linux `images` no longer panics on short digests
+
+### Next
+- Push — CI (linux race + coverage, e2e) only runs on push/PR; cgroup/overlay/veth paths can't execute on macOS
+- Same pattern can extend to `top`/`port`/`diff` proxy-vs-native output if touched again
+- `stats` default flip to streaming left as a deliberate breaking change for later
+
+---
+
 ## Session 2026-09-19 — Coverage: shared ps filter helper
 
 ### What was done

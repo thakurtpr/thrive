@@ -24,7 +24,7 @@ func ImagesCmd() *cobra.Command {
 				os.Exit(1)
 			}
 			for _, img := range images {
-				fmt.Printf("%s\t%s\t%d layers\n", img.Ref, img.Digest[:12], len(img.Layers))
+				fmt.Printf("%s\t%s\t%d layers\n", img.Ref, truncateDigest(img.Digest, 12), len(img.Layers))
 			}
 		},
 	}

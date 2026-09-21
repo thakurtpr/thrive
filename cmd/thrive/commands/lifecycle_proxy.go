@@ -134,8 +134,10 @@ func StatsCmd() *cobra.Command {
 	return cmd
 }
 
-// printProxyStats fetches one stats snapshot per container from the daemon.
+// printProxyStats fetches one stats snapshot per container from the daemon
+// and prints the shared table (identical layout to Linux native).
 func printProxyStats(cmd *cobra.Command, args []string) error {
+	var rows []statsRow
 	for _, id := range args {
 		data, err := vm.DialControl(cmd.Context(), "stats", []string{id}, nil)
 		if err != nil {
@@ -143,9 +145,16 @@ func printProxyStats(cmd *cobra.Command, args []string) error {
 		}
 		var result map[string]any
 		json.Unmarshal(data, &result)
-		out, _ := json.MarshalIndent(result, "", "  ")
-		fmt.Println(string(out))
+		rows = append(rows, statsRow{
+			ID:         statsStr(result, "id"),
+			Status:     statsStr(result, "status"),
+			MemCurrent: statsNum(result, "memory_current"),
+			MemLimit:   statsNum(result, "memory_limit"),
+			PIDs:       statsNum(result, "pids_current"),
+			CPUUsec:    statsNum(result, "cpu_usage_usec"),
+		})
 	}
+	formatStatsTable(os.Stdout, rows)
 	return nil
 }
 

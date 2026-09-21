@@ -29,11 +29,7 @@ func ImagesCmd() *cobra.Command {
 			fmt.Printf("%-50s %-22s %s\n", "REPOSITORY", "DIGEST", "LAYERS")
 			fmt.Println("────────────────────────────────────────────────────────────────────────────────")
 			for _, img := range imgs {
-				digest := img.Digest
-				if len(digest) > 19 {
-					digest = digest[:19]
-				}
-				fmt.Printf("%-50s %-22s %d\n", img.Ref, digest, len(img.Layers))
+				fmt.Printf("%-50s %-22s %d\n", img.Ref, truncateDigest(img.Digest, 19), len(img.Layers))
 			}
 			return nil
 		},

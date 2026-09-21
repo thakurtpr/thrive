@@ -22,10 +22,7 @@ func listRepoTags(ref, username, password string) ([]string, error) {
 }
 
 func shortDigest(d string) string {
-	if len(d) > 12 {
-		return d[:12]
-	}
-	return d
+	return truncateDigest(d, 12)
 }
 
 // verifyPulledImage runs cosign verification when requested, removing the

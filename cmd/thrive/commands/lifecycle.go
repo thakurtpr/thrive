@@ -192,22 +192,24 @@ func StatsCmd() *cobra.Command {
 }
 
 // printStatsSnapshot prints one stats table for ids; errors go to stderr
-// per-container so one missing container doesn't hide the rest.
+// per-container so one missing container doesn't hide the rest. Rendering
+// delegates to the shared helper so Linux and the VM-daemon proxy print
+// identical tables.
 func printStatsSnapshot(ctx context.Context, ids []string) {
-	fmt.Printf("%-13s %-9s %-12s %-12s %-6s %s\n", "CONTAINER ID", "STATUS", "MEM USAGE", "MEM LIMIT", "PIDS", "CPU USEC")
+	var rows []statsRow
 	for _, id := range ids {
 		s, err := runtime.Stats(ctx, id)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			continue
 		}
-		short := s.ID
-		if len(short) > 12 {
-			short = short[:12]
-		}
-		fmt.Printf("%-13s %-9s %-12d %-12d %-6d %d\n",
-			short, s.Status, s.MemoryCurrent, s.MemoryLimit, s.PIDsCurrent, s.CPUUsageUsec)
+		rows = append(rows, statsRow{
+			ID: s.ID, Status: s.Status,
+			MemCurrent: s.MemoryCurrent, MemLimit: s.MemoryLimit,
+			PIDs: s.PIDsCurrent, CPUUsec: s.CPUUsageUsec,
+		})
 	}
+	formatStatsTable(os.Stdout, rows)
 }
 
 // UpdateCmd updates resource limits of a container live.
