@@ -5,6 +5,29 @@
 
 ---
 
+## Session 2026-09-19 — Parity audit: service/network/volume + locks
+
+### What was done
+Audited the remaining complex surfaces for linux/proxy flag divergence.
+`run`, `exec`, `service create`, `network`, and `volume` are all at parity
+— no code changes needed. Locked the two most regression-prone flag sets
+with cross-linked tests so either side adding a flag breaks the other
+side's suite loudly.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `service create` 11-flag parity locks (linux live-checked list, proxy live PASS, linux suite compile+vet checked) | `commands_phase_test.go`, `phase_e_proxy_test.go` |
+
+### Verification
+- Proxy service-create test PASS live; linux suite `go vet` + `go test -c` CLEAN
+- Full `go test ./...` 13 ok, 0 FAIL; builds CLEAN host/linux/windows; gofmt clean
+
+### Next
+- Push — CI (linux race + coverage, e2e) only runs on push/PR
+- `stats` default flip to streaming left as a deliberate breaking change for later
+
+---
+
 ## Session 2026-09-19 — Parity: create flags end-to-end (proxy + daemon)
 
 ### What was done

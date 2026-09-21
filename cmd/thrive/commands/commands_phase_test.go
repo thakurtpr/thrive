@@ -4,6 +4,8 @@ package commands
 
 import (
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 // TestPhaseCommands_Use verifies every Phase A-E Linux command exists.
@@ -120,6 +122,29 @@ func TestCreateCmd_Flags(t *testing.T) {
 	} {
 		if f := cmd.Flags().Lookup(flagName); f == nil {
 			t.Errorf("CreateCmd: missing --%s flag", flagName)
+		}
+	}
+}
+
+// TestServiceCreateCmd_Flags verifies Linux service create exposes the full
+// flag set. Must match TestServiceCreateCmd_ParityFlags (proxy) — change
+// both together.
+func TestServiceCreateCmd_Flags(t *testing.T) {
+	var create *cobra.Command
+	for _, sub := range ServiceCmd().Commands() {
+		if sub.Use == "create [image] [command...]" {
+			create = sub
+		}
+	}
+	if create == nil {
+		t.Fatal("ServiceCmd: missing create subcommand")
+	}
+	for _, flagName := range []string{
+		"name", "replicas", "env", "secret", "config", "publish", "volume",
+		"network", "restart", "update-parallelism", "update-delay",
+	} {
+		if f := create.Flags().Lookup(flagName); f == nil {
+			t.Errorf("service create: missing --%s flag", flagName)
 		}
 	}
 }

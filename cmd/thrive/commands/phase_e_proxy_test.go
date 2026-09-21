@@ -5,6 +5,7 @@ package commands_test
 import (
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/thakurprasadrout/thrive/cmd/thrive/commands"
 )
 
@@ -87,6 +88,29 @@ func TestPhaseEProxyCmds(t *testing.T) {
 	for _, want := range []string{"create [container] [name]", "ls [container]", "rm [container] [name]"} {
 		if !checkpointSubs[want] {
 			t.Errorf("CheckpointCmd: missing %q", want)
+		}
+	}
+}
+
+// TestServiceCreateCmd_ParityFlags verifies the service-create proxy
+// registers every flag Linux accepts. Must match TestServiceCreateCmd_Flags
+// (linux) — change both together.
+func TestServiceCreateCmd_ParityFlags(t *testing.T) {
+	var create *cobra.Command
+	for _, sub := range commands.ServiceCmd().Commands() {
+		if sub.Use == "create [image] [command...]" {
+			create = sub
+		}
+	}
+	if create == nil {
+		t.Fatal("ServiceCmd proxy: missing create subcommand")
+	}
+	for _, flagName := range []string{
+		"name", "replicas", "env", "secret", "config", "publish", "volume",
+		"network", "restart", "update-parallelism", "update-delay",
+	} {
+		if f := create.Flags().Lookup(flagName); f == nil {
+			t.Errorf("service create proxy: missing --%s flag", flagName)
 		}
 	}
 }
