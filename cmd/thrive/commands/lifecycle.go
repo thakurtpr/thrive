@@ -264,10 +264,11 @@ func TopCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Printf("%-8s %-8s %s\n", "PID", "PPID", "CMD")
+			rows := make([]topRow, 0, len(procs))
 			for _, p := range procs {
-				fmt.Printf("%-8d %-8d %s\n", p.PID, p.PPID, p.Cmd)
+				rows = append(rows, topRow{PID: p.PID, PPID: p.PPID, Cmd: p.Cmd})
 			}
+			formatTopTable(os.Stdout, rows)
 		},
 	}
 }
@@ -288,12 +289,11 @@ func PortCmd() *cobra.Command {
 			if len(args) == 2 {
 				filter = args[1]
 			}
+			var rows []portRow
 			for _, pm := range ports {
-				if filter != "" && strconv.Itoa(pm.ContainerPort) != filter {
-					continue
-				}
-				fmt.Printf("%d/%s -> 0.0.0.0:%d\n", pm.ContainerPort, pm.Protocol, pm.HostPort)
+				rows = append(rows, portRow{ContainerPort: pm.ContainerPort, Protocol: pm.Protocol, HostPort: pm.HostPort})
 			}
+			formatPortLines(os.Stdout, filterPortRows(rows, filter))
 		},
 	}
 }
@@ -310,9 +310,11 @@ func DiffCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}
+			rows := make([]diffRow, 0, len(changes))
 			for _, c := range changes {
-				fmt.Printf("%s %s\n", c.Kind, c.Path)
+				rows = append(rows, diffRow{Kind: c.Kind, Path: c.Path})
 			}
+			formatDiffLines(os.Stdout, rows)
 		},
 	}
 }

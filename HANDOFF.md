@@ -5,6 +5,31 @@
 
 ---
 
+## Session 2026-09-19 — Coverage: shared top/port/diff helpers + port-filter fix
+
+### What was done
+Extended the shared-helper pattern to `top`/`port`/`diff`. Audit found a
+real bug: the proxy forwarded `port <id> <private-port>` to the daemon but
+`handlePort` ignores the filter arg, so macOS/Windows listed ALL ports.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `topRow`/`portRow`/`diffRow` + parse/format/filter helpers (no build tag) | `lifecycle_shared.go` (new) |
+| 2 | Proxy `port` filters host-side (docker parity with Linux, works with already-deployed VMs; daemon deliberately untouched — no VM rebuild needed) | `lifecycle_proxy.go` |
+| 3 | Linux top/port/diff render through shared helpers (byte-identical output); proxy top/diff use them too | `lifecycle.go`, `lifecycle_proxy.go` |
+| 4 | 4 portable tests: top parse/format, port parse/filter/lines, diff parse/lines | `lifecycle_shared_test.go` (new) |
+
+### Verification
+- New tests 4/4 PASS (host); full `go test ./...` 13 ok, 0 FAIL
+- `go build` + `go vet` CLEAN on host/linux/windows; `go test -c` compiles for linux+windows commands suites
+- gofmt clean on all touched files
+
+### Next
+- Push — CI (linux race + coverage, e2e) only runs on push/PR
+- `stats` default flip to streaming left as a deliberate breaking change for later
+
+---
+
 ## Session 2026-09-19 — Coverage: shared stats + images helpers
 
 ### What was done

@@ -199,13 +199,7 @@ func TopCmd() *cobra.Command {
 			}
 			var result map[string]any
 			json.Unmarshal(data, &result)
-			if procs, ok := result["processes"].([]any); ok {
-				fmt.Printf("%-8s %-8s %s\n", "PID", "PPID", "CMD")
-				for _, p := range procs {
-					pm, _ := p.(map[string]any)
-					fmt.Printf("%-8v %-8v %v\n", pm["pid"], pm["ppid"], pm["cmd"])
-				}
-			}
+			formatTopTable(os.Stdout, parseTopProcs(result["processes"]))
 			return nil
 		},
 	}
@@ -224,12 +218,13 @@ func PortCmd() *cobra.Command {
 			}
 			var result map[string]any
 			json.Unmarshal(data, &result)
-			if ports, ok := result["ports"].([]any); ok {
-				for _, p := range ports {
-					pm, _ := p.(map[string]any)
-					fmt.Printf("%v/%v -> 0.0.0.0:%v\n", pm["container_port"], pm["protocol"], pm["host_port"])
-				}
+			// The daemon returns all mappings; filter host-side (docker
+			// `port` parity with Linux, works with already-deployed VMs).
+			filter := ""
+			if len(args) == 2 {
+				filter = args[1]
 			}
+			formatPortLines(os.Stdout, filterPortRows(parsePortMaps(result["ports"]), filter))
 			return nil
 		},
 	}
@@ -248,12 +243,7 @@ func DiffCmd() *cobra.Command {
 			}
 			var result map[string]any
 			json.Unmarshal(data, &result)
-			if changes, ok := result["changes"].([]any); ok {
-				for _, c := range changes {
-					cm, _ := c.(map[string]any)
-					fmt.Printf("%v %v\n", cm["kind"], cm["path"])
-				}
-			}
+			formatDiffLines(os.Stdout, parseDiffChanges(result["changes"]))
 			return nil
 		},
 	}
