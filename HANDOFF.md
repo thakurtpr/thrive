@@ -5,6 +5,34 @@
 
 ---
 
+## Session 2026-09-19 — Parity sweep: buildx/compose refuse-flags
+
+### What was done
+Swept the remaining proxies (buildx, compose, network, volume, secret, tag,
+cp, checkpoint, stack, context, plugin). Top-level stop/kill/restart/rm have
+no flags on Linux either — proxies match, untouched. Two refuse-path gaps
+found where the proxy returned `unknown flag` instead of the honest
+Linux-required error (established R2 logs pattern).
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | Proxy `buildx build` registers --platform/--file/--tag/--no-cache, `bake` registers --file (still honestly refuse) | `phase_e_proxy.go` |
+| 2 | Proxy `compose up` registers --build; refuses when set (no VM build support), proceeds otherwise | `compose_stub.go` |
+| 3 | Parity-locking tests both sides (proxy live PASS; linux vet+compile checked) | `commands_test.go`, `commands_phase_test.go` |
+
+### Verification
+- New tests PASS; full `go test ./...` 13 ok, 0 FAIL
+- `go build` CLEAN host/linux/windows; `go vet` CLEAN linux + windows commands; gofmt clean
+
+### Deferred (needs daemon semantics + Linux testing)
+- compose stop/kill/restart/rm --timeout/--signal/--force forwarding (daemon handlers hardcode 10s/SIGKILL today)
+
+### Next
+- Push — CI (linux race + coverage, e2e) only runs on push/PR
+- `stats` default flip to streaming left as a deliberate breaking change for later
+
+---
+
 ## Session 2026-09-19 — Parity audit: service/network/volume + locks
 
 ### What was done

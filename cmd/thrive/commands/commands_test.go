@@ -11,6 +11,7 @@ package commands_test
 import (
 	"testing"
 
+	"github.com/spf13/cobra"
 	"github.com/thakurprasadrout/thrive/cmd/thrive/commands"
 )
 
@@ -446,6 +447,50 @@ func TestSignCmd_SubCommands(t *testing.T) {
 	for _, want := range []string{"keygen", "verify IMAGE"} {
 		if !subMap[want] {
 			t.Errorf("SignCmd: missing sub-command %q (have: %v)", want, subMap)
+		}
+	}
+}
+
+// TestBuildxRefuseCmds_Flags verifies build/bake register Linux flags so
+// scripts get the honest Linux-required error instead of `unknown flag`.
+func TestBuildxRefuseCmds_Flags(t *testing.T) {
+	subs := map[string]*cobra.Command{}
+	for _, sub := range commands.BuildxCmd().Commands() {
+		subs[sub.Use] = sub
+	}
+	build, ok := subs["build [path]"]
+	if !ok {
+		t.Fatal("BuildxCmd proxy: missing build subcommand")
+	}
+	for _, flagName := range []string{"platform", "file", "tag", "no-cache"} {
+		if f := build.Flags().Lookup(flagName); f == nil {
+			t.Errorf("buildx build proxy: missing --%s flag", flagName)
+		}
+	}
+	bake, ok := subs["bake [service...]"]
+	if !ok {
+		t.Fatal("BuildxCmd proxy: missing bake subcommand")
+	}
+	if f := bake.Flags().Lookup("file"); f == nil {
+		t.Error("buildx bake proxy: missing --file flag")
+	}
+}
+
+// TestComposeUp_BuildFlag verifies compose up registers --build (honestly
+// refused without Linux) alongside --scale.
+func TestComposeUp_BuildFlag(t *testing.T) {
+	var up *cobra.Command
+	for _, sub := range commands.ComposeCmd().Commands() {
+		if sub.Use == "up" {
+			up = sub
+		}
+	}
+	if up == nil {
+		t.Fatal("ComposeCmd proxy: missing up subcommand")
+	}
+	for _, flagName := range []string{"scale", "build"} {
+		if f := up.Flags().Lookup(flagName); f == nil {
+			t.Errorf("compose up proxy: missing --%s flag", flagName)
 		}
 	}
 }

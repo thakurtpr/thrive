@@ -25,6 +25,13 @@ func BuildxCmd() *cobra.Command {
 			return fmt.Errorf("buildx build: requires Linux runtime — build contexts are not synced to the VM")
 		},
 	}
+	// Registered for CLI parity (scripts passing them get the honest
+	// Linux-required error instead of `unknown flag`), matching the R2
+	// logs --since/--until/--timestamps pattern.
+	buildCmd.Flags().String("platform", "", "Target platform (native only)")
+	buildCmd.Flags().StringP("file", "f", "", "Build definition file")
+	buildCmd.Flags().StringP("tag", "t", "", "Image tag")
+	buildCmd.Flags().Bool("no-cache", false, "Do not use the build cache")
 
 	bake := &cobra.Command{
 		Use: "bake [service...]", Short: "Build all services from a compose file",
@@ -32,6 +39,7 @@ func BuildxCmd() *cobra.Command {
 			return fmt.Errorf("buildx bake: requires Linux runtime — build contexts are not synced to the VM")
 		},
 	}
+	bake.Flags().StringP("file", "f", "docker-compose.yml", "Compose file path")
 
 	ls := &cobra.Command{
 		Use: "ls", Short: "List builders",

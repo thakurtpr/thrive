@@ -71,6 +71,9 @@ func ComposeCmd() *cobra.Command {
 		Use:   "up",
 		Short: "Create and start all services",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if build, _ := cmd.Flags().GetBool("build"); build {
+				return fmt.Errorf("compose up --build: requires Linux runtime — build contexts are not synced to the VM")
+			}
 			scales, _ := cmd.Flags().GetStringArray("scale")
 			extra := map[string]any{}
 			if len(args) > 0 {
@@ -88,6 +91,7 @@ func ComposeCmd() *cobra.Command {
 		},
 	}
 	up.Flags().StringArray("scale", nil, "Scale a service (service=num)")
+	up.Flags().Bool("build", false, "Build services before starting (requires Linux runtime)")
 	down := daemonSub("down", "Stop and remove all services", "down")
 	ps := daemonSub("ps", "List service containers", "ps")
 	logs := daemonSub("logs [service...]", "View output from containers", "logs")

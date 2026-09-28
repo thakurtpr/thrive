@@ -149,6 +149,50 @@ func TestServiceCreateCmd_Flags(t *testing.T) {
 	}
 }
 
+// TestBuildxCmd_Flags verifies Linux buildx build/bake expose their flags.
+// Must match TestBuildxRefuseCmds_Flags (proxy) — change both together.
+func TestBuildxCmd_Flags(t *testing.T) {
+	subs := map[string]*cobra.Command{}
+	for _, sub := range BuildxCmd().Commands() {
+		subs[sub.Use] = sub
+	}
+	build, ok := subs["build [path]"]
+	if !ok {
+		t.Fatal("BuildxCmd: missing build subcommand")
+	}
+	for _, flagName := range []string{"platform", "file", "tag", "no-cache"} {
+		if f := build.Flags().Lookup(flagName); f == nil {
+			t.Errorf("buildx build: missing --%s flag", flagName)
+		}
+	}
+	bake, ok := subs["bake [service...]"]
+	if !ok {
+		t.Fatal("BuildxCmd: missing bake subcommand")
+	}
+	if f := bake.Flags().Lookup("file"); f == nil {
+		t.Error("buildx bake: missing --file flag")
+	}
+}
+
+// TestComposeUp_Flags verifies Linux compose up exposes --scale/--build.
+// Must match TestComposeUp_BuildFlag (proxy) — change both together.
+func TestComposeUp_Flags(t *testing.T) {
+	var up *cobra.Command
+	for _, sub := range ComposeCmd().Commands() {
+		if sub.Use == "up" {
+			up = sub
+		}
+	}
+	if up == nil {
+		t.Fatal("ComposeCmd: missing up subcommand")
+	}
+	for _, flagName := range []string{"scale", "build"} {
+		if f := up.Flags().Lookup(flagName); f == nil {
+			t.Errorf("compose up: missing --%s flag", flagName)
+		}
+	}
+}
+
 // TestR2FlagDepth verifies R2 Docker-parity flags exist.
 func TestR2FlagDepth(t *testing.T) {
 	for _, flagName := range []string{"platform", "quiet", "all-tags", "verify", "verify-key"} {
