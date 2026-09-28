@@ -255,6 +255,27 @@ the daemonless design. Revisit only if the project accepts that tradeoff.
 recorded image manifest) → Changed; otherwise → Added. No lower-layer access
 (e.g. image gone) degrades to Added, never to an error.
 
+## Copy-fallback diff/commit (2026-09-19)
+
+### Context
+`image.Mount` falls back to copying layers into `merged/` when neither
+kernel overlay nor fuse-overlayfs is available (found via CI e2e: `diff`
+on such containers was always empty because it only walked `upper/`).
+
+### Decision
+`Mount` records `overlay`/`copy` in `<container>/mount-mode` (absent =
+legacy overlay). In copy mode, `Diff` compares merged-vs-lower layers
+(Added/Changed by SHA-256 + symlink targets, Deleted for lower-only
+files, sorted output) and `Commit` snapshots the full merged rootfs as a
+single squashed layer (deletions inherently captured). Overlay behavior
+is untouched.
+
+### Tradeoffs
+Committed copy-mode images duplicate base files in their layer, and a
+squashed layer mounted under a later copy fallback won't apply whiteouts
+across generations. Accepted for v1: correctness (no silent empty diffs)
+over storage optimality.
+
 ## R3 (2026-09-19) — cosign verification is host-side
 
 ### Context

@@ -317,6 +317,27 @@ func ReadManifest(imageRef string) (env, entrypoint, cmd []string) {
 	return m.Env, m.Entrypoint, m.Cmd
 }
 
+// Mount-mode markers recorded per container so Diff/Commit know whether
+// the writable layer is an OverlayFS upper dir or a copy fallback.
+const (
+	// MountModeFile is written into the container dir at mount time.
+	MountModeFile = "mount-mode"
+	// MountModeOverlay means merged is an overlay mount over upper+lower.
+	MountModeOverlay = "overlay"
+	// MountModeCopy means layers were copied into merged; container
+	// writes land in merged directly and upper stays empty.
+	MountModeCopy = "copy"
+)
+
+// recordMountMode persists the mount mode best-effort (the mount already
+// succeeded; a marker failure must not fail the container start).
+func recordMountMode(containerDir, mode string) {
+	log := telemetry.Logger()
+	if err := os.WriteFile(filepath.Join(containerDir, MountModeFile), []byte(mode), 0644); err != nil {
+		log.Info("image.Mount: record mode failed", telemetry.FieldError(err))
+	}
+}
+
 func Mount(ctx context.Context, imageRef, containerID string) (string, error) {
 	log := telemetry.Logger()
 	log.Info("image.Mount: starting", telemetry.FieldString("imageRef", imageRef), telemetry.FieldString("containerID", containerID))
@@ -369,6 +390,7 @@ func Mount(ctx context.Context, imageRef, containerID string) (string, error) {
 	mountErr := syscall.Mount("overlay", mergedDir, "overlay", 0, overlayOpts)
 	if mountErr == nil {
 		log.Info("image.Mount: overlay mounted", telemetry.FieldString("merged", mergedDir))
+		recordMountMode(containerDir, MountModeOverlay)
 		return mergedDir, nil
 	}
 	log.Info("image.Mount: kernel overlay failed, trying fuse-overlayfs", telemetry.FieldError(mountErr))
@@ -378,6 +400,7 @@ func Mount(ctx context.Context, imageRef, containerID string) (string, error) {
 	out, fuseErr := exec.CommandContext(ctx, "fuse-overlayfs", fuseArgs...).CombinedOutput()
 	if fuseErr == nil {
 		log.Info("image.Mount: fuse-overlayfs mounted", telemetry.FieldString("merged", mergedDir))
+		recordMountMode(containerDir, MountModeOverlay)
 		return mergedDir, nil
 	}
 	log.Info("image.Mount: fuse-overlayfs also failed, falling back to copy",
@@ -393,6 +416,7 @@ func Mount(ctx context.Context, imageRef, containerID string) (string, error) {
 	}
 	log.Info("image.Mount: using copy-based rootfs (overlayfs unavailable)",
 		telemetry.FieldString("merged", mergedDir))
+	recordMountMode(containerDir, MountModeCopy)
 	return mergedDir, nil
 }
 

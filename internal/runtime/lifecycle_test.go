@@ -5,6 +5,8 @@ package runtime
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -140,3 +142,98 @@ func TestCommitWithOptions_EmptyRef(t *testing.T) {
 type discardTestWriter struct{}
 
 func (discardTestWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+// TestDiffCopyChanges verifies copy-fallback diffing: Added for new files,
+// Changed for modified content/retargeted links, Deleted for lower-only
+// files, silence for identical content (logic verified on fixtures).
+func TestDiffCopyChanges(t *testing.T) {
+	root := t.TempDir()
+	l1 := filepath.Join(root, "l1")
+	l2 := filepath.Join(root, "l2")
+	merged := filepath.Join(root, "merged")
+	for _, d := range []string{l1, l2, merged} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write := func(base, rel, content string) {
+		t.Helper()
+		p := filepath.Join(base, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(l1, "same.txt", "same")
+	write(l1, "gone.txt", "gone")
+	write(l1, "chg.txt", "old")
+	write(l1, "dup.txt", "dup")
+	write(l2, "dup.txt", "dup")
+	if err := os.Symlink("same.txt", filepath.Join(l1, "lnk")); err != nil {
+		t.Fatal(err)
+	}
+	write(merged, "same.txt", "same")
+	write(merged, "chg.txt", "new")
+	write(merged, "added.txt", "added")
+	if err := os.Symlink("chg.txt", filepath.Join(merged, "lnk")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := diffCopyChanges(merged, []string{l1, l2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := map[string]string{}
+	for _, c := range got {
+		m[c.Path] = c.Kind
+	}
+	for p, k := range map[string]string{
+		"/added.txt": "A", "/chg.txt": "C", "/lnk": "C",
+		"/gone.txt": "D", "/dup.txt": "D",
+	} {
+		if m[p] != k {
+			t.Errorf("path %s: got %q want %q (full %v)", p, m[p], k, m)
+		}
+	}
+	if _, ok := m["/same.txt"]; ok {
+		t.Errorf("unchanged file reported: %v", m)
+	}
+}
+
+// TestLowerFile_FirstHit verifies first-match precedence across layers.
+func TestLowerFile_FirstHit(t *testing.T) {
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir2, "f.txt"), []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if got := lowerFile([]string{dir1, dir2}, "f.txt"); got != filepath.Join(dir2, "f.txt") {
+		t.Errorf("lowerFile: got %q", got)
+	}
+	if got := lowerFile([]string{dir1, dir2}, "missing"); got != "" {
+		t.Errorf("lowerFile missing: got %q", got)
+	}
+}
+
+// TestFileContentDiffers verifies type and content comparison.
+func TestFileContentDiffers(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a.txt")
+	b := filepath.Join(dir, "b.txt")
+	os.WriteFile(a, []byte("same"), 0644)
+	os.WriteFile(b, []byte("same"), 0644)
+	if fileContentDiffers(a, b) {
+		t.Error("identical files: got differs=true")
+	}
+	os.WriteFile(b, []byte("other"), 0644)
+	if !fileContentDiffers(a, b) {
+		t.Error("different files: got differs=false")
+	}
+	os.WriteFile(b, []byte("same"), 0644)
+	sub := filepath.Join(dir, "sub")
+	os.Mkdir(sub, 0755)
+	if !fileContentDiffers(a, sub) {
+		t.Error("file vs dir: got differs=false")
+	}
+}

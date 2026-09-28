@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -309,11 +310,18 @@ func ContainerPorts(ctx context.Context, id string) ([]PortMapping, error) {
 //   - any other entry whose relative path also exists in a lower image
 //     layer → C (changed); otherwise → A (added).
 func Diff(ctx context.Context, id string) ([]FileChange, error) {
+	lowerDirs := lowerLayerDirs(id)
+	if mountMode(id) == image.MountModeCopy {
+		mergedDir := filepath.Join(containerDir(id), "merged")
+		if _, err := os.Stat(mergedDir); err != nil {
+			return nil, nil
+		}
+		return diffCopyChanges(mergedDir, lowerDirs)
+	}
 	upperDir := filepath.Join(containerDir(id), "upper")
 	if _, err := os.Stat(upperDir); err != nil {
 		return nil, nil
 	}
-	lowerDirs := lowerLayerDirs(id)
 	var out []FileChange
 	err := filepath.Walk(upperDir, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
@@ -353,6 +361,128 @@ func Diff(ctx context.Context, id string) ([]FileChange, error) {
 		return nil, fmt.Errorf("runtime.Diff: walk: %w", err)
 	}
 	return out, nil
+}
+
+// mountMode returns the recorded mount mode, defaulting to overlay for
+// containers created before the marker existed.
+func mountMode(id string) string {
+	data, err := os.ReadFile(filepath.Join(containerDir(id), image.MountModeFile))
+	if err != nil {
+		return image.MountModeOverlay
+	}
+	if strings.TrimSpace(string(data)) == image.MountModeCopy {
+		return image.MountModeCopy
+	}
+	return image.MountModeOverlay
+}
+
+// diffCopyChanges compares a copy-fallback merged rootfs against the lower
+// image layers: entries absent from all lowers → Added; differing content
+// → Changed; lower entries absent from merged → Deleted. Directory entries
+// are reported Added only when absent from all lowers (present dirs are
+// structural, not changes). Output is sorted by path for stability.
+func diffCopyChanges(mergedDir string, lowerDirs []string) ([]FileChange, error) {
+	var out []FileChange
+	seen := map[string]bool{}
+	err := filepath.Walk(mergedDir, func(path string, fi os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		rel, _ := filepath.Rel(mergedDir, path)
+		if rel == "." {
+			return nil
+		}
+		seen[rel] = true
+		lowerPath := lowerFile(lowerDirs, rel)
+		if lowerPath == "" {
+			out = append(out, FileChange{Kind: "A", Path: "/" + rel})
+			return nil
+		}
+		if fi.IsDir() {
+			return nil
+		}
+		if fileContentDiffers(path, lowerPath) {
+			out = append(out, FileChange{Kind: "C", Path: "/" + rel})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("runtime.Diff: walk merged: %w", err)
+	}
+	reported := map[string]bool{}
+	for _, ld := range lowerDirs {
+		err := filepath.Walk(ld, func(path string, fi os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			rel, _ := filepath.Rel(ld, path)
+			if rel == "." || fi.IsDir() || seen[rel] || reported[rel] {
+				return nil
+			}
+			reported[rel] = true
+			out = append(out, FileChange{Kind: "D", Path: "/" + rel})
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("runtime.Diff: walk lower: %w", err)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out, nil
+}
+
+// lowerFile returns the first lower-layer path for rel, or "" if absent.
+func lowerFile(lowerDirs []string, rel string) string {
+	for _, d := range lowerDirs {
+		if p := filepath.Join(d, rel); pathExists(p) {
+			return p
+		}
+	}
+	return ""
+}
+
+// pathExists reports whether Lstat succeeds on path.
+func pathExists(p string) bool {
+	_, err := os.Lstat(p)
+	return err == nil
+}
+
+// fileContentDiffers reports whether two paths differ in type or content
+// (regular files by SHA-256, symlinks by target).
+func fileContentDiffers(a, b string) bool {
+	fa, errA := os.Lstat(a)
+	fb, errB := os.Lstat(b)
+	if errA != nil || errB != nil {
+		return true
+	}
+	if fa.Mode()&os.ModeSymlink != 0 || fb.Mode()&os.ModeSymlink != 0 {
+		ta, errA := os.Readlink(a)
+		tb, errB := os.Readlink(b)
+		return errA != nil || errB != nil || ta != tb
+	}
+	if fa.IsDir() || fb.IsDir() {
+		return fa.IsDir() != fb.IsDir()
+	}
+	ha, errA := fileHash(a)
+	hb, errB := fileHash(b)
+	return errA != nil || errB != nil || ha != hb
+}
+
+// fileHash returns the SHA-256 of a regular file.
+func fileHash(path string) ([32]byte, error) {
+	var zero [32]byte
+	f, err := os.Open(path)
+	if err != nil {
+		return zero, err
+	}
+	defer f.Close() //nolint:errcheck
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return zero, err
+	}
+	var sum [32]byte
+	copy(sum[:], h.Sum(nil))
+	return sum, nil
 }
 
 // lowerLayerDirs returns the extracted image layer directories for the
@@ -446,8 +576,14 @@ func CommitWithOptions(ctx context.Context, id, newRef string, opts CommitOption
 	if newRef == "" {
 		return fmt.Errorf("runtime.Commit: image reference required")
 	}
-	upperDir := filepath.Join(containerDir(id), "upper")
-	if _, err := os.Stat(upperDir); err != nil {
+	// Overlay mode snapshots the upper dir (delta layer). Copy-fallback
+	// mode has no delta: writes live in merged, so snapshot the full
+	// rootfs (squashed layer, deletions inherently captured).
+	srcDir := filepath.Join(containerDir(id), "upper")
+	if mountMode(id) == image.MountModeCopy {
+		srcDir = filepath.Join(containerDir(id), "merged")
+	}
+	if _, err := os.Stat(srcDir); err != nil {
 		return fmt.Errorf("runtime.Commit: no writable layer for container %s", id)
 	}
 	paused := false
@@ -466,7 +602,7 @@ func CommitWithOptions(ctx context.Context, id, newRef string, opts CommitOption
 	if err := os.MkdirAll(layerDir, 0755); err != nil {
 		return fmt.Errorf("runtime.Commit: mkdir: %w", err)
 	}
-	if err := copyDir(upperDir, layerDir); err != nil {
+	if err := copyDir(srcDir, layerDir); err != nil {
 		return fmt.Errorf("runtime.Commit: copy: %w", err)
 	}
 	meta := struct {

@@ -5,6 +5,31 @@
 
 ---
 
+## Session 2026-09-19 — Copy-mode diff/commit (e2e DIFF_OK failure)
+
+### What was done
+CI e2e went 39/40: only `DIFF_OK` missed. Logs showed the harness falls
+back to copy-based rootfs (no overlay/fuse), where container writes land
+in `merged/` and `upper/` stays empty — so `diff` was always empty and
+`commit` snapshotted empty layers. Real product gap, fixed properly.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `Mount` records `overlay`/`copy` marker (best-effort, never fails start) | `internal/image/image.go` |
+| 2 | Copy-mode `Diff`: merged-vs-lower compare (SHA-256/symlinks), lower-only → Deleted, sorted | `internal/runtime/lifecycle.go` |
+| 3 | Copy-mode `Commit`: squashed merged snapshot (deletions captured) | `internal/runtime/lifecycle.go` |
+| 4 | 3 linux tests (CI): copy-diff matrix, lower precedence, content compare; algorithm additionally verified via stdlib scratch run on darwin | `internal/runtime/lifecycle_test.go` |
+
+### Verification
+- Algorithm output verified exact (A/C/D/silence/sort) via scratch harness
+- Full `go test ./...` 13 ok, 0 FAIL (host); `go build` + `go vet` CLEAN host/linux/windows; linux runtime/image `go test -c` compiles
+- E2E diff assertion should pass on this push (copy-mode now reports Added); pushed
+
+### Next
+- Watch CI e2e; remaining known item is the `stats` default-flip decision
+
+---
+
 ## Session 2026-09-19 — e2e covers R2/R3 flags
 
 ### What was done
