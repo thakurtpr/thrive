@@ -106,13 +106,3 @@ func cpProxyFromContainer(ctx context.Context, containerID, srcPath, dstPath str
 	fmt.Printf("Copied %s:%s → %s\n", containerID, srcPath, dstPath)
 	return nil
 }
-
-func parseCpArgs(src, dst string) (containerID, srcPath, dstPath string, toContainer bool) {
-	if i := strings.Index(src, ":"); i > 0 {
-		return src[:i], src[i+1:], dst, false
-	}
-	if i := strings.Index(dst, ":"); i > 0 {
-		return dst[:i], src, dst[i+1:], true
-	}
-	return "", src, dst, false
-}

@@ -20,7 +20,7 @@ func CpCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			src, dst := args[0], args[1]
 
-			containerID, srcPath, dstPath, toContainer := parseCpArgsLinux(src, dst)
+			containerID, srcPath, dstPath, toContainer := parseCpArgs(src, dst)
 			if containerID == "" {
 				return fmt.Errorf("cp: one argument must be in CONTAINER:PATH form")
 			}
@@ -146,14 +146,4 @@ func copyTree(src, dst string) error {
 		}
 		return cerr
 	})
-}
-
-func parseCpArgsLinux(src, dst string) (containerID, srcPath, dstPath string, toContainer bool) {
-	if i := strings.Index(src, ":"); i > 0 {
-		return src[:i], src[i+1:], dst, false
-	}
-	if i := strings.Index(dst, ":"); i > 0 {
-		return dst[:i], src, dst[i+1:], true
-	}
-	return "", src, dst, false
 }

@@ -5,6 +5,25 @@
 
 ---
 
+## Session 2026-09-19 — Unify cp arg parsing + test
+
+### What was done
+Zero-coverage sweep found byte-identical `parseCpArgs` (proxy) and
+`parseCpArgsLinux` (linux). Unified into one portable helper with
+direction-detection tests (6 subcases incl. precedence and leading-colon
+edges). No behavior change — pure dedupe.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | Portable `parseCpArgs`; both call sites switched; duplicates deleted | `cp_shared.go` (new), `cp.go`, `cp_proxy.go` |
+| 2 | `TestParseCpArgs` (portable, runs everywhere incl. CI darwin) | `cp_shared_test.go` (new) |
+
+### Verification
+- New test PASS; full `go test ./...` 13 ok, 0 FAIL
+- `go build` + `go vet` CLEAN host/linux/windows; linux commands `go test -c` compiles; pushed
+
+---
+
 ## Session 2026-09-19 — verifyPulledImage tests + linux Remove SafeRef fix
 
 ### What was done
