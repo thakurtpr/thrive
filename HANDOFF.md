@@ -5,6 +5,16 @@
 
 ---
 
+## Milestone 2026-09-19 — e2e 41/0, all jobs green
+
+Run `36420202061` (`42be979`): E2E **41 pass / 0 fail** — the copy-mode
+diff/commit chain (DIFF_OK) and exec-exit diagnostics all green, plus
+Linux/macOS/Windows/Lint. Three-iteration loop closed: copy-mode diff →
+nsenter --root → --root= form. The EXEC_EXIT assertion design paid off
+twice, pinpointing each failure in a single run.
+
+---
+
 ## Follow-up 2026-09-19 — nsenter --root needs the = form
 
 CI e2e: `nsenter: failed to execute /proc/395/root`. nsenter declares
