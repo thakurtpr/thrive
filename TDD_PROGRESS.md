@@ -14,10 +14,11 @@
 | pkg/dag | dag_test.go | ~80% | stable | topological sort + cycle detection fully tested |
 | pkg/thrivefile | thrivefile_test.go | ~75% | stable | YAML parsing for all directives verified |
 | internal/lazypull | lazypull_test.go | ~55% | improved | 11 tests: fetch paths, cache hits, HTTP errors |
-| cmd/thrive/commands | *_test.go | ~22% | improved | structure/flag tests for all Phase A–E commands (logic is thin by design) |
+| cmd/thrive/commands | *_test.go | ~27% (host-measured; higher on Linux) | improved | shared output helpers (ps/stats/images/top/port/diff) at 95–100%; flag-parity locks for create/service/buildx/compose/rm; logic is thin by design |
 | internal/vm (desktop) | darwin_launcher_test.go, wsl2_launcher_test.go, hyperv_launcher_test.go, download_test.go, vsock_darwin_test.go | ~80% | stable | 28 tests, all PASS |
+| internal/signing | cosign_test.go | 50% | new | offline bundle/SimpleSigning roundtrips + key-input errors (host-measured); live registry verify needs network |
 
-**Overall: ~60% (measured on portable packages; Linux-only suites run in CI) — Target: 70%**
+**Overall: ~60–65% (portable measured on host; commands 22%→27% via shared-helper + parity tests; Linux CI gives the final number) — Target: 70%**
 
 ### New packages (added in Phase A–E push, 2026-09-15)
 
@@ -38,8 +39,9 @@
 
 ### How to complete the last mile (Linux runner)
 - `GOOS=linux go test -coverprofile=coverage.txt ./...` gives the authoritative total.
-- Biggest remaining lever: `cmd/thrive/commands` (22%) — add golden-output tests for ps/images/inspect formatting.
+- Biggest remaining lever: `cmd/thrive/commands` (~27% host) — golden-output tests for images/inspect formatting; `verifyPulledImage` needs a mock registry.
 - Live-path tests needing root: OverlayFS mount, veth/iptables, FUSE serve, criu dump.
+- NOTE (2026-09-19): the Priority 1/2 gap items below are historical — image (~60%), lazypull (~55%), runtime (~55%), p2p (~55%), secrets (~70%) are done per the table above. Kept for provenance.
 
 ---
 
