@@ -6,6 +6,36 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Changed (BREAKING)
+
+- `thrive stats` now streams every 2s by default (docker parity);
+  pass `--no-stream` for the previous one-shot snapshot.
+
+### Added
+
+- `pull --platform/--quiet/--all-tags`, `push --quiet` on all platforms
+- `pull --verify/--verify-key` (cosign via sigstore-go, all platforms;
+  untrusted images removed on failure)
+- `commit -a/--author, -p/--pause`; `diff` Changed/Deleted kinds;
+  `logs --since/--until/--timestamps` flags (honestly refused, daemonless logs)
+- `stats` streaming; `create`/`service create` full flag parity on proxies;
+  compose stop/kill/restart/rm timeout/signal/force forwarding; `rm --force`
+- Copy-fallback `diff` (merged-vs-lower) and `commit` (squashed snapshot)
+- `nsenter --root` so exec writes land in the container
+
+### Fixed
+
+- Atomic `state.json` writes (temp+rename); foreground `run` retries
+  transient state loss instead of silently exiting 0
+- Linux `image.Remove` missed the `SafeRef` dir (untrusted leftovers)
+- `thrive compose` `-f` shorthand panic (proxy + Linux)
+- `Manager.Stats` read the host hierarchy instead of the manager dir
+- Daemon `port` filter arg honored host-side; `handleCreate` honors all opts
+
+---
+
 ## [0.3.0] — 2026-05-17
 
 ### Added

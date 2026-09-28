@@ -114,8 +114,8 @@ func RenameCmd() *cobra.Command {
 	}
 }
 
-// StatsCmd proxies stats to the VM daemon. Default is a one-shot snapshot;
-// pass --no-stream=false to poll the daemon every 2s until interrupted.
+// StatsCmd proxies stats to the VM daemon (docker parity: streams every
+// 2s until interrupted; --no-stream prints a single snapshot).
 func StatsCmd() *cobra.Command {
 	var noStream bool
 	cmd := &cobra.Command{
@@ -147,7 +147,7 @@ func StatsCmd() *cobra.Command {
 			}
 		},
 	}
-	cmd.Flags().BoolVar(&noStream, "no-stream", true, "Display only the current snapshot (pass --no-stream=false to stream every 2s)")
+	cmd.Flags().BoolVar(&noStream, "no-stream", false, "Display only the current snapshot instead of streaming")
 	return cmd
 }
 

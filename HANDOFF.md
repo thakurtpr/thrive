@@ -5,6 +5,24 @@
 
 ---
 
+## Session 2026-09-19 — stats default flipped to streaming
+
+### What was done
+Owner-approved: `thrive stats` now streams every 2s by default (docker
+parity, pre-1.0); `--no-stream` prints one snapshot. Changed on Linux +
+proxy, recorded as BREAKING in CHANGELOG [Unreleased], ADR updated.
+E2E already passes explicit `--no-stream`, unaffected.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | Default `false` + help text, both builds | `lifecycle.go`, `lifecycle_proxy.go` |
+| 2 | BREAKING changelog entry + ADR flip note; agent backlog updated | `CHANGELOG.md`, `DECISIONS.md`, `AGENT_STATUS.md` |
+
+### Verification
+- Full `go test ./...` 13 ok, 0 FAIL; builds + vet CLEAN; pushed
+
+---
+
 ## Session 2026-09-19 — Misc command registration locks
 
 ### What was done

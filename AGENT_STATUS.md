@@ -52,7 +52,6 @@ When an agent completes meaningful work it MUST:
 
 | Priority | Agent | Task |
 |----------|-------|------|
-| MED | ORCHESTRATOR | `stats` default flip to streaming (breaking — needs release decision) |
 | MED | ORCHESTRATOR | Coverage 65% → 70%: golden-output tests, mock-registry verify path |
 | LOW | NETWORK | Live bridge/veth/iptables paths need privileged Linux (CI skips) |
 | LOW | ORCHESTRATOR | Journal logging (sd_journal_send) if systemd sink wanted |

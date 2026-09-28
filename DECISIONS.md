@@ -315,17 +315,16 @@ Verification runs in the client, never in the daemon:
 Keyless (Fulcio/Rekor) identities stay out of scope: offline verification
 against an explicit public key file only.
 
-## R3 (2026-09-19) — stats streaming keeps one-shot default
+## R3 (2026-09-19) — stats streaming default (flipped 2026-09-28)
 
 ### Context
-`docker stats` streams by default; thrive historically defaulted to a
-one-shot snapshot (`--no-stream=true`, "streaming not yet supported").
+`docker stats` streams by default; thrive shipped one-shot default
+(`--no-stream=true`) with streaming behind `--no-stream=false`.
 
 ### Decision
-Streaming is now implemented (2s client-side poll until SIGINT, one-shot
-per-container fetch on the daemon), but the default stays one-shot for
-back-compat. Pass `--no-stream=false` to stream. Flipping the default is
-a deliberate breaking change left for a later release.
+Default flipped to streaming to match docker (owner-approved 2026-09-28,
+pre-1.0). `--no-stream` prints a single snapshot. Recorded in
+CHANGELOG [Unreleased] as BREAKING.
 
 ## Atomic state writes + loud run loop (2026-09-19)
 
