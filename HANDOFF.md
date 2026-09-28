@@ -5,6 +5,26 @@
 
 ---
 
+## Session 2026-09-19 — updateOpts extraction + test
+
+### What was done
+Last non-trivial inline opts map: the update proxy built its 4-key bridge
+map inside `RunE`. Extracted portable `updateOpts` (wire format preserved
+exactly — all four keys always sent, daemon ignores unset) with a mapping
+test covering set values and always-sent zeros. Remaining inline maps are
+all 1–3 trivial keys (cp direction, logs follow, rm force, prune all).
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `updateOpts` helper; proxy delegates | `lifecycle_shared.go`, `lifecycle_proxy.go` |
+| 2 | `TestUpdateOpts` (portable; same flags on both builds) | `lifecycle_shared_test.go` |
+
+### Verification
+- New test PASS; full `go test ./...` 13 ok, 0 FAIL
+- `go build` + `go vet` CLEAN host/linux/windows; linux commands `go test -c` compiles; pushed
+
+---
+
 ## Session 2026-09-19 — serviceCreateOpts extraction + test
 
 ### What was done

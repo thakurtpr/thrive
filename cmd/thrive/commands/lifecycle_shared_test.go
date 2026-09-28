@@ -97,3 +97,22 @@ func TestDiffRows(t *testing.T) {
 		t.Errorf("empty diff: got %q", empty.String())
 	}
 }
+
+// TestUpdateOpts verifies the update flag→wire-map mapping, incl. the
+// always-sent zero values the daemon treats as unset.
+func TestUpdateOpts(t *testing.T) {
+	cmd := UpdateCmd()
+	if err := cmd.Flags().Set("memory", "512m"); err != nil {
+		t.Fatalf("set --memory: %v", err)
+	}
+	if err := cmd.Flags().Set("cpu-shares", "512"); err != nil {
+		t.Fatalf("set --cpu-shares: %v", err)
+	}
+	opts := updateOpts(cmd)
+	if opts["memory"] != "512m" || opts["cpu_shares"] != int64(512) {
+		t.Errorf("set opts: got %v", opts)
+	}
+	if opts["cpu_quota"] != int64(0) || opts["pids_limit"] != int64(0) {
+		t.Errorf("zero opts: got %v", opts)
+	}
+}

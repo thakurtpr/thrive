@@ -182,13 +182,7 @@ func UpdateCmd() *cobra.Command {
 		Short: "Update resource limits of a container",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			memory, _ := cmd.Flags().GetString("memory")
-			cpuQuota, _ := cmd.Flags().GetInt64("cpu-quota")
-			cpuShares, _ := cmd.Flags().GetInt64("cpu-shares")
-			pidsLimit, _ := cmd.Flags().GetInt64("pids-limit")
-			_, err := vm.DialControl(cmd.Context(), "update", []string{args[0]}, map[string]any{
-				"memory": memory, "cpu_quota": cpuQuota, "cpu_shares": cpuShares, "pids_limit": pidsLimit,
-			})
+			_, err := vm.DialControl(cmd.Context(), "update", []string{args[0]}, updateOpts(cmd))
 			if err != nil {
 				return fmt.Errorf("update failed: %w", err)
 			}

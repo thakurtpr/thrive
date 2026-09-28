@@ -4,7 +4,22 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+
+	"github.com/spf13/cobra"
 )
+
+// updateOpts reads the resource-limit flag set into the daemon bridge map.
+// Portable and pure (no dial); the proxy sends all four keys always (empty
+// / zero included) and the daemon ignores unset values — preserved exactly.
+func updateOpts(cmd *cobra.Command) map[string]any {
+	memory, _ := cmd.Flags().GetString("memory")
+	cpuQuota, _ := cmd.Flags().GetInt64("cpu-quota")
+	cpuShares, _ := cmd.Flags().GetInt64("cpu-shares")
+	pidsLimit, _ := cmd.Flags().GetInt64("pids-limit")
+	return map[string]any{
+		"memory": memory, "cpu_quota": cpuQuota, "cpu_shares": cpuShares, "pids_limit": pidsLimit,
+	}
+}
 
 // Shared output helpers for `thrive top` / `port` / `diff` (no build tag).
 // The Linux native commands (lifecycle.go) and the VM-daemon proxies
