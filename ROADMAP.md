@@ -98,45 +98,49 @@ Status legend: `[x]` complete · `[~]` in progress · `[ ]` pending · `[-]` fut
 
 ## Phase 9: Test Coverage to 70%+ — [~] IN PROGRESS
 **Owner:** ORCHESTRATOR agent | **Complexity:** MED | **Impact:** HIGH
-**Current:** ~25% | **Target:** 70%
+**Current:** ~60–65% (portable measured; Linux CI authoritative) | **Target:** 70%
 
-- [ ] image_test.go — Pull/Mount/Unmount/Push integration tests
-- [ ] runtime_test.go — expand exec/kill/logs coverage
-- [ ] lazypull_test.go — FUSE chunk fetch mocking
-- [ ] p2p deeper coverage — bootstrap, routing table eviction
-- [ ] secrets additional edge cases — wrong key, corrupt ciphertext
-- [ ] CLI integration tests — golden output comparison
-
----
-
-## Phase 10: Network Isolation (CNI) — [ ] PENDING
-**Owner:** NETWORK agent (TBD) | **Complexity:** HIGH | **Impact:** HIGH
-
-- [ ] veth pair creation per container
-- [ ] Bridge network with NAT (iptables MASQUERADE)
-- [ ] CNI plugin interface compatibility
-- [ ] DNS resolution inside container (resolv.conf injection)
-- [ ] Port forwarding: --publish/-p host:container
+- [x] image_test.go — Pull/Mount/Unmount/Push (incl. chunk store, SafeRef)
+- [x] runtime_test.go — state roundtrip + lifecycle error paths
+- [x] lazypull_test.go — fetch paths, cache hits, HTTP errors
+- [x] p2p deeper coverage — DHT ops, peers, chunk request paths
+- [x] secrets edge cases — wrong key, corrupt/truncated ciphertext, concurrency
+- [x] CLI tests — shared output helpers at ~100%, flag-parity locks, wire-map tests
+- [ ] Golden-output tests for images/inspect formatting (biggest remaining lever)
+- [ ] `verifyPulledImage` live-registry path (needs mock OCI registry)
+- [ ] Live-path tests needing root: OverlayFS mount, veth/iptables, FUSE serve, criu dump
 
 ---
 
-## Phase 11: Image Signing — [ ] PENDING
-**Owner:** SECURITY agent (TBD) | **Complexity:** MED | **Impact:** HIGH
+## Phase 10: Network Isolation — [x] COMPLETE
+**Owner:** NETWORK agent | **Complexity:** HIGH | **Impact:** HIGH
 
-- [ ] cosign-compatible signature generation and verification
-- [ ] Signature storage in OCI registry (`.sig` suffix tag)
-- [ ] Verify-on-pull policy enforcement
-- [ ] Key management CLI subcommands
+- [x] veth pair creation per container (`internal/network/veth.go`)
+- [x] Bridge network with NAT — thrive0 (172.20.0.0/16) + named /16 networks
+- [x] CNI plugin interface compatibility (`internal/network/cni.go`)
+- [x] DNS resolution inside container (resolv.conf injection)
+- [x] Port forwarding: --publish/-p host:container (iptables DNAT + slirp4netns rootless fallback)
 
 ---
 
-## Phase 12: systemd Integration — [ ] PENDING
+## Phase 11: Image Signing — [x] COMPLETE
+**Owner:** SECURITY agent | **Complexity:** MED | **Impact:** HIGH
+
+- [x] cosign-compatible verification via sigstore-go (`pull --verify --verify-key`, all platforms)
+- [x] Signature storage: cosign `.sig` OCI artifacts (read path)
+- [x] Verify-on-pull: untrusted images removed on failure
+- [x] Key management: thrive-native Ed25519 `sign keygen` / `sign image` / `verify`
+- [-] Keyless (Fulcio/Rekor) identities — out of scope (explicit key files only)
+
+---
+
+## Phase 12: systemd Integration — [x] COMPLETE
 **Owner:** ORCHESTRATOR agent | **Complexity:** MED | **Impact:** MED
 
-- [ ] thrive.socket activation unit
-- [ ] thrive@.service template for named containers
-- [ ] Journal logging integration (sd_journal_send)
-- [ ] Cgroup delegation via systemd slice
+- [x] thrive.socket activation unit + thrive.service (`debian/`, `make install-systemd`)
+- [x] Linux daemon entry (`cmd/thrived`)
+- [ ] Journal logging integration (sd_journal_send) — stdout JSON is the current sink
+- [ ] Cgroup delegation via systemd slice — direct cgroupfs management instead
 
 ---
 

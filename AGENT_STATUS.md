@@ -2,20 +2,22 @@
 
 ## Current Session
 
-Session date: 2026-05-16
-Session goal: Implement all phases of THRIVE, reach clean build + test compilation
+Session date: 2026-09-19
+Session goal: CLI parity + coverage hardening to green CI (achieved: all 5 jobs green)
 
 | Agent | Domain | Status | Last Updated | Notes |
 |-------|--------|--------|--------------|-------|
-| ORCHESTRATOR | CLI, integration, session coordination | ACTIVE | 2026-05-16 | Completed session implementing all phases; docs pass |
-| RUNTIME | internal/runtime | COMPLETE | 2026-05-16 | Start + cgroup + chroot wired; state.json persistence done |
-| IMAGE | internal/image | COMPLETE | 2026-05-16 | Pull + Mount + Unmount + Push implemented |
+| ORCHESTRATOR | CLI, integration, session coordination | ACTIVE | 2026-09-19 | R2/R3 + shared-helper refactors + CI triage; tree green |
+| RUNTIME | internal/runtime | COMPLETE | 2026-09-19 | lifecycle flags end-to-end (commit/diff/stats/top/port); rm --force |
+| IMAGE | internal/image | COMPLETE | 2026-09-19 | SafeRef Remove fix; pull --verify on all platforms |
 | BUILD | pkg/build | COMPLETE | 2026-05-16 | DAG execution with real container-per-step done |
 | SECRETS | internal/secrets | COMPLETE | 2026-05-16 | Auto-key generation added; tmpfs injection wired |
 | OTEL | internal/otel | COMPLETE | 2026-05-16 | OTLP gRPC exporter wired; Prometheus metrics active |
 | P2P | internal/p2p | COMPLETE | 2026-05-16 | RequestChunk 30s blocking timeout fixed |
 | LAZYPULL | internal/lazypull | COMPLETE | 2026-05-16 | HTTP fetch to OCI blob endpoint implemented |
-| DESKTOP | internal/vm (Phase 9) | COMPLETE | 2026-05-17 | vsock timing fix: PrepareVSOCKListener before vfkit spawn; WaitForBoot retry-Dial loop (2min); 28 TDD tests including 7 vsock bridge tests; build tags darwin; all PASS |
+| DESKTOP | internal/vm (Phase 9) | COMPLETE | 2026-05-17 | vsock timing fix; 28 TDD tests; all PASS |
+| NETWORK | internal/network | COMPLETE | 2026-09-15 | bridge/veth/NAT/DNS/CNI/ports; named nets + IPAM; CI skips without net-admin |
+| SECURITY | internal/signing | COMPLETE | 2026-09-19 | thrive-native Ed25519 + cosign verify parity (key-based; keyless out of scope) |
 
 ---
 
@@ -50,9 +52,7 @@ When an agent completes meaningful work it MUST:
 
 | Priority | Agent | Task |
 |----------|-------|------|
-| HIGH | IMAGE | Write image_test.go (Pull/Mount/Unmount/Push) — 0% coverage |
-| HIGH | LAZYPULL | Write lazypull_test.go (fetchChunk mock, cache hit) — 0% coverage |
-| MED | RUNTIME | Expand runtime_test.go (Kill, Logs, Delete paths) |
-| MED | P2P | Expand peer_test.go (Bootstrap, RequestChunk timeout) |
-| LOW | ORCHESTRATOR | CLI golden-output integration tests for ps, images, secret list |
-| LOW | NETWORK (TBD) | Phase 10: veth pairs, CNI, NAT — new agent required |
+| MED | ORCHESTRATOR | `stats` default flip to streaming (breaking — needs release decision) |
+| MED | ORCHESTRATOR | Coverage 65% → 70%: golden-output tests, mock-registry verify path |
+| LOW | NETWORK | Live bridge/veth/iptables paths need privileged Linux (CI skips) |
+| LOW | ORCHESTRATOR | Journal logging (sd_journal_send) if systemd sink wanted |
