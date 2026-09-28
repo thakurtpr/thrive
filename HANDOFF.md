@@ -5,6 +5,29 @@
 
 ---
 
+## Session 2026-09-19 — e2e covers R2/R3 flags
+
+### What was done
+The e2e harness covered none of the R2/R3 work (no stats, diff, commit,
+rm --force, or pull --quiet assertions). Added 4 hermetic tests reusing the
+cached alpine image (no extra pulls): stats one-shot table, diff→commit→
+images→rmi chain, rm refusal + --force removal (with leak-proof cleanup),
+and cached quiet pull. Deliberately excluded: streaming stats (hangs CI),
+compose up --build (needs build contexts), cosign --verify (needs keys).
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `test_stats_snapshot`, `test_diff_commit`, `test_rm_force`, `test_pull_quiet` + calls | `scripts/e2e-docker.sh` |
+
+### Verification
+- `bash -n` clean; full `go test ./...` 13 ok, 0 FAIL; builds CLEAN
+- Live e2e runs in CI (pushed) — first run will confirm the new assertions
+
+### Next
+- Watch CI e2e on this push; fix any assertion mismatch (untestable locally)
+
+---
+
 ## Session 2026-09-19 — updateOpts extraction + test
 
 ### What was done

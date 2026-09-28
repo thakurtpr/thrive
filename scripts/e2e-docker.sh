@@ -250,6 +250,74 @@ test_interactive_stdin() {
   fi
 }
 
+test_stats_snapshot() {
+  log_info "--- test: stats one-shot snapshot ---"
+  out=$(exec_in '
+    thrive run --detach --name e2e-stats alpine:3.19 sleep 60 2>&1 >/dev/null
+    thrive stats --no-stream e2e-stats 2>&1
+    echo EXIT:$?
+    thrive kill e2e-stats 2>&1 >/dev/null
+    thrive rm -f e2e-stats 2>&1 >/dev/null
+  ')
+  if echo "$out" | grep -q "EXIT:0" && echo "$out" | grep -q "CONTAINER ID" && echo "$out" | grep -q "running"; then
+    log_ok "stats: one-shot table for running container"
+  else
+    log_fail "stats: snapshot failed; output: $out"
+  fi
+}
+
+test_diff_commit() {
+  log_info "--- test: diff + commit ---"
+  out=$(exec_in '
+    thrive run --detach --name e2e-diff alpine:3.19 sleep 60 2>&1 >/dev/null
+    thrive exec e2e-diff touch /e2e-diff-file 2>&1 >/dev/null
+    thrive diff e2e-diff 2>&1 | grep -q e2e-diff-file && echo "DIFF_OK"
+    thrive commit e2e-diff e2e-commit-test:v1 2>&1 | grep -q committed && echo "COMMIT_OK"
+    thrive images 2>&1 | grep -q e2e-commit-test && echo "IMAGES_OK"
+    thrive rmi e2e-commit-test:v1 2>&1 >/dev/null
+    thrive kill e2e-diff 2>&1 >/dev/null
+    thrive rm -f e2e-diff 2>&1 >/dev/null
+    echo ALL_DONE
+  ')
+  for marker in DIFF_OK COMMIT_OK IMAGES_OK ALL_DONE; do
+    if echo "$out" | grep -q "$marker"; then
+      log_ok "diff/commit: $marker"
+    else
+      log_fail "diff/commit: $marker missing; full output: $out"
+    fi
+  done
+}
+
+test_rm_force() {
+  log_info "--- test: rm refuses running, --force removes ---"
+  out=$(exec_in '
+    thrive run --detach --name e2e-rmforce alpine:3.19 sleep 60 2>&1 >/dev/null
+    thrive rm e2e-rmforce 2>&1; echo "PLAIN_EXIT:$?"
+    thrive rm -f e2e-rmforce 2>&1; echo "FORCE_EXIT:$?"
+  ')
+  ok=1
+  echo "$out" | grep -q "running" || ok=0
+  echo "$out" | grep -q "PLAIN_EXIT:[1-9]" || ok=0
+  echo "$out" | grep -q "FORCE_EXIT:0" || ok=0
+  if [ "$ok" -eq 1 ]; then
+    log_ok "rm: refuses running, --force removes"
+  else
+    log_fail "rm: force semantics wrong; output: $out"
+  fi
+  # Belt and braces: never leak the container into later tests.
+  exec_in "thrive kill e2e-rmforce 2>&1 >/dev/null; thrive rm -f e2e-rmforce 2>&1 >/dev/null"
+}
+
+test_pull_quiet() {
+  log_info "--- test: pull --quiet (cached) ---"
+  out=$(exec_in "thrive-pull --quiet alpine:3.19 2>&1; echo EXIT:\$?")
+  if echo "$out" | grep -q "EXIT:0"; then
+    log_ok "pull --quiet (cached)"
+  else
+    log_fail "pull --quiet: $out"
+  fi
+}
+
 # ── Image matrix ───────────────────────────────────────────────────────────
 IMAGES=(
   "alpine:3.19"
@@ -291,6 +359,12 @@ test_system_clean
 test_volume
 test_exec_flags
 test_interactive_stdin
+
+# R2/R3 flag and lifecycle coverage (all use cached alpine, no extra pulls)
+test_pull_quiet
+test_stats_snapshot
+test_diff_commit
+test_rm_force
 
 # ── Summary ───────────────────────────────────────────────────────────────
 echo ""
