@@ -5,6 +5,25 @@
 
 ---
 
+## Session 2026-09-19 — serviceCreateOpts extraction + test
+
+### What was done
+Same inline-opts pattern as run/create: the service-create proxy built its
+daemon wire map inside `RunE`. Extracted portable `serviceCreateOpts` and
+covered the exact map (incl. replicas/parallelism defaults) with a portable
+test that runs against both builds (shared Use + flag names).
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `serviceCreateOpts` helper; proxy delegates (wire format unchanged) | `service_shared.go` (new), `swarm_proxy.go` |
+| 2 | `TestServiceCreateOpts` + `findSub` helper (portable internal) | `service_shared_test.go` (new) |
+
+### Verification
+- New test PASS (host); full `go test ./...` 13 ok, 0 FAIL
+- `go build` + `go vet` CLEAN host/linux/windows; linux commands `go test -c` compiles; pushed
+
+---
+
 ## Session 2026-09-19 — Dedupe run/create bridge opts + test
 
 ### What was done

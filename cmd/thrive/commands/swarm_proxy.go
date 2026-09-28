@@ -115,23 +115,7 @@ func ServiceCmd() *cobra.Command {
 	create := &cobra.Command{
 		Use: "create [image] [command...]", Short: "Create a replicated service", Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name, _ := cmd.Flags().GetString("name")
-			replicas, _ := cmd.Flags().GetInt("replicas")
-			envVars, _ := cmd.Flags().GetStringArray("env")
-			secrets, _ := cmd.Flags().GetStringArray("secret")
-			configs, _ := cmd.Flags().GetStringArray("config")
-			ports, _ := cmd.Flags().GetStringArray("publish")
-			volumes, _ := cmd.Flags().GetStringArray("volume")
-			netMode, _ := cmd.Flags().GetString("network")
-			parallelism, _ := cmd.Flags().GetInt("update-parallelism")
-			delay, _ := cmd.Flags().GetInt("update-delay")
-			restart, _ := cmd.Flags().GetString("restart")
-			_, err := dialSwarm(cmd, "service-create", args, map[string]any{
-				"name": name, "replicas": replicas, "env": envVars, "ports": ports,
-				"volumes": volumes, "network": netMode, "secrets": secrets,
-				"configs": configs,
-				"parallelism": parallelism, "delay": delay, "restart": restart,
-			})
+			_, err := dialSwarm(cmd, "service-create", args, serviceCreateOpts(cmd))
 			return err
 		},
 	}
