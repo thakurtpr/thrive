@@ -5,6 +5,26 @@
 
 ---
 
+## Session 2026-09-19 — runSign hermetic tests
+
+### What was done
+Zero-coverage sweep found `runSign` (thrive-native Ed25519 sign path)
+untested. It is hermetic with `$HOME`/`%USERPROFILE%` redirected, so 3
+portable tests cover it: missing image, digest-less manifest, and a full
+sign→verify roundtrip incl. key auto-generation, key reuse, and wrong-digest
+rejection. Also verified the test fixture matches the real manifest shape
+(`{"Ref","Digest","Layers"}` capital-D keys).
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `TestRunSign_*` (portable internal tests, isolated home) | `sign_internal_test.go` (new) |
+
+### Verification
+- New tests 3/3 PASS; full `go test ./...` 13 ok, 0 FAIL
+- `go build` + `go vet` CLEAN host/linux/windows; windows commands `go test -c` compiles; pushed
+
+---
+
 ## Session 2026-09-19 — Unify cp arg parsing + test
 
 ### What was done
