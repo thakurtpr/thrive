@@ -770,7 +770,7 @@ func handleExec(ctx context.Context, req *Request, w io.Writer) {
 		nsenterArgs := []string{
 			"--target", strconv.Itoa(state.PID),
 			"--mount", "--pid", "--ipc", "--uts", "--net",
-			"--root", "/proc/" + strconv.Itoa(state.PID) + "/root",
+			"--root=/proc/" + strconv.Itoa(state.PID) + "/root",
 			"--",
 		}
 		nsenterArgs = append(nsenterArgs, cmd...)

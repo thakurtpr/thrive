@@ -234,7 +234,9 @@ func TestRmCmd_ForceFlag(t *testing.T) {
 func TestBuildNsenterArgs(t *testing.T) {
 	args := buildNsenterArgs(485)
 	joined := strings.Join(args, " ")
-	for _, want := range []string{"--target 485", "--mount", "--root /proc/485/root", "--"} {
+	// NOTE: --root uses the = form: nsenter declares it with an optional
+	// argument, so space-separated --root <path> is parsed as the command.
+	for _, want := range []string{"--target 485", "--mount", "--root=/proc/485/root", "--"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("nsenter args %q: missing %q", joined, want)
 		}

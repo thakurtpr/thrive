@@ -5,6 +5,16 @@
 
 ---
 
+## Follow-up 2026-09-19 — nsenter --root needs the = form
+
+CI e2e: `nsenter: failed to execute /proc/395/root`. nsenter declares
+`--root` with an *optional* argument, so space-separated `--root <path>`
+is misparsed as the command. Switched both call sites to
+`--root=/proc/<pid>/root` (+ unit test + ADR note). The new EXEC_EXIT
+assertion pinpointed this in one run — diagnostics working as designed.
+
+---
+
 ## Session 2026-09-19 — nsenter --root (e2e still red after copy fix)
 
 ### What was done

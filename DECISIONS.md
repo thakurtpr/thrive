@@ -287,9 +287,11 @@ never in the container. Read-only probes (`uname -a`) masked it.
 
 ### Decision
 Both nsenter call sites (Linux CLI, VM daemon) pass
-`--root /proc/<pid>/root`, which always tracks the target's root,
-including chroot-only containers. E2E now asserts the exec exit code
-before the diff assertion so a future exec regression is diagnosable
+`--root=/proc/<pid>/root`, which always tracks the target's root,
+including chroot-only containers. The `=` form is mandatory: nsenter
+declares `--root` with an optional argument, so a space-separated path is
+misparsed as the command (found live in CI). E2E now asserts the exec exit
+code before the diff assertion so a future exec regression is diagnosable
 instead of silent.
 
 ## R3 (2026-09-19) — cosign verification is host-side

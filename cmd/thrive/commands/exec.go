@@ -88,7 +88,7 @@ func buildNsenterArgs(pid int) []string {
 	return []string{
 		"--target", strconv.Itoa(pid),
 		"--mount", "--pid", "--ipc", "--uts", "--net",
-		"--root", "/proc/" + strconv.Itoa(pid) + "/root",
+		"--root=/proc/" + strconv.Itoa(pid) + "/root",
 		"--",
 	}
 }
