@@ -89,10 +89,16 @@ func TestManagerStats_EmptyDir(t *testing.T) {
 // TestManagerStats_ReadsFiles verifies parsing of cgroup files.
 func TestManagerStats_ReadsFiles(t *testing.T) {
 	m := testManager(t)
-	os.WriteFile(filepath.Join(m.cgroupDir, "memory.current"), []byte("1048576\n"), 0644)
-	os.WriteFile(filepath.Join(m.cgroupDir, "pids.current"), []byte("3\n"), 0644)
-	os.WriteFile(filepath.Join(m.cgroupDir, "cgroup.freeze"), []byte("1\n"), 0644)
-	os.WriteFile(filepath.Join(m.cgroupDir, "cpu.stat"), []byte("usage_usec 12345\nuser_usec 100\n"), 0644)
+	writeFixture := func(name, content string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(m.cgroupDir, name), []byte(content), 0644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	writeFixture("memory.current", "1048576\n")
+	writeFixture("pids.current", "3\n")
+	writeFixture("cgroup.freeze", "1\n")
+	writeFixture("cpu.stat", "usage_usec 12345\nuser_usec 100\n")
 	s, err := m.Stats()
 	if err != nil {
 		t.Fatalf("Stats: %v", err)

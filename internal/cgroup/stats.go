@@ -24,7 +24,14 @@ type Stats struct {
 // Missing files are treated as zero values so stats work for
 // chroot-only or partially-initialised containers.
 func ReadStats(containerID string) (Stats, error) {
-	dir := filepath.Join("/sys/fs/cgroup/thrive", containerID)
+	return readStatsDir(filepath.Join("/sys/fs/cgroup/thrive", containerID))
+}
+
+// readStatsDir parses a cgroup v2 directory layout (memory.current,
+// memory.max, pids.current, cgroup.freeze, cpu.stat) into Stats.
+// ReadStats fixes the directory to the host hierarchy; Manager.Stats
+// uses the manager's own directory so temp-dir-rooted managers work.
+func readStatsDir(dir string) (Stats, error) {
 	var s Stats
 	s.MemoryCurrent = readIntFile(filepath.Join(dir, "memory.current"))
 	s.MemoryMax = readIntFile(filepath.Join(dir, "memory.max"))
@@ -57,11 +64,11 @@ func readIntFile(path string) int64 {
 	return v
 }
 
-// ManagerStats returns stats via an existing Manager.
+// ManagerStats returns stats via an existing Manager, reading the
+// manager's own directory (not the host hierarchy by basename).
 func (m *Manager) Stats() (Stats, error) {
-	id := filepath.Base(m.cgroupDir)
-	if id == "" || id == "." || id == "/" {
+	if m.cgroupDir == "" || m.cgroupDir == "." || m.cgroupDir == "/" {
 		return Stats{}, fmt.Errorf("cgroup.Stats: invalid cgroup dir %q", m.cgroupDir)
 	}
-	return ReadStats(id)
+	return readStatsDir(m.cgroupDir)
 }

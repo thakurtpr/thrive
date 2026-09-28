@@ -5,6 +5,28 @@
 
 ---
 
+## Session 2026-09-19 — CI triage: cgroup Stats bug + net-admin skips
+
+### What was done
+Checked CI on the pushed stack: E2E healed (panic fix), compose unit panic
+gone. 7 failures remained in `Build & Test (Linux)` — all diagnosed from
+CI logs, two fixed here.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | **Real bug:** `Manager.Stats()` read `/sys/fs/cgroup/thrive/<basename>` instead of the manager's own dir — wrong for every temp-dir-rooted manager and test. Extracted `readStatsDir`; `ReadStats` behavior unchanged; every other `Manager` method already used `m.cgroupDir` | `internal/cgroup/stats.go` |
+| 2 | Test fixture writes now fail loudly (`t.Fatalf`) instead of silently producing confusing zero-stats failures | `internal/cgroup/cgroup_extra_test.go` |
+| 3 | Bridge-dependent network tests skip on `Operation not permitted` (no CAP_NET_ADMIN on GH runners); validation-only assertions untouched (run pre-bridge) | `internal/network/nets_test.go` |
+
+### Verification
+- Full `go test ./...` 13 ok, 0 FAIL (host); `go build` + `go vet` CLEAN host/linux/windows; `go test -c` compiles linux cgroup/network/commands/thrived
+- Linux-only suites need CI (pushed) — expect cgroup + network green; E2E already green
+
+### Next
+- Watch CI on this push; remaining known item is the `stats` default-flip decision
+
+---
+
 ## Session 2026-09-19 — Compose ops flags + daemon opts + rm --force
 
 ### What was done

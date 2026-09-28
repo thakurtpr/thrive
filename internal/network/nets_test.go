@@ -1,6 +1,7 @@
 package network
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -10,11 +11,23 @@ func testNetOverride(t *testing.T) {
 	t.Cleanup(func() { networkDirOverride = "" })
 }
 
+// skipIfNoNetAdmin skips bridge-dependent tests where the runner lacks
+// CAP_NET_ADMIN (e.g. GitHub Actions): EnsureBridge fails with
+// "RTNETLINK answers: Operation not permitted". Validation-only assertions
+// must not use this — they run before bridge setup and stay meaningful.
+func skipIfNoNetAdmin(t *testing.T, err error) {
+	t.Helper()
+	if err != nil && strings.Contains(err.Error(), "Operation not permitted") {
+		t.Skip("skipping: no CAP_NET_ADMIN for bridge setup")
+	}
+}
+
 // TestCreateInspectList verifies network creation and discovery.
 // Bridge/NAT setup is skipped off-Linux; metadata paths are exercised.
 func TestCreateInspectList(t *testing.T) {
 	testNetOverride(t)
 	nw, err := CreateNetwork("frontend", "", "")
+	skipIfNoNetAdmin(t, err)
 	if err != nil {
 		t.Fatalf("CreateNetwork: %v", err)
 	}
@@ -57,6 +70,7 @@ func TestCreate_Validation(t *testing.T) {
 		t.Error("CreateNetwork overlay: expected error, got nil")
 	}
 	if _, err := CreateNetwork("dup", "", ""); err != nil {
+		skipIfNoNetAdmin(t, err)
 		t.Fatalf("CreateNetwork: %v", err)
 	}
 	if _, err := CreateNetwork("dup", "", ""); err == nil {
@@ -68,6 +82,7 @@ func TestCreate_Validation(t *testing.T) {
 func TestConnectDisconnect(t *testing.T) {
 	testNetOverride(t)
 	if _, err := CreateNetwork("app", "", ""); err != nil {
+		skipIfNoNetAdmin(t, err)
 		t.Fatal(err)
 	}
 	if err := ConnectNetwork("ctr1", "app"); err != nil {
@@ -96,6 +111,7 @@ func TestRemove_Guards(t *testing.T) {
 		t.Error("RemoveNetwork bridge: expected error, got nil")
 	}
 	if _, err := CreateNetwork("busy", "", ""); err != nil {
+		skipIfNoNetAdmin(t, err)
 		t.Fatal(err)
 	}
 	if err := ConnectNetwork("ctr9", "busy"); err != nil {
@@ -113,9 +129,11 @@ func TestRemove_Guards(t *testing.T) {
 func TestPrune(t *testing.T) {
 	testNetOverride(t)
 	if _, err := CreateNetwork("idle", "", ""); err != nil {
+		skipIfNoNetAdmin(t, err)
 		t.Fatal(err)
 	}
 	if _, err := CreateNetwork("used", "", ""); err != nil {
+		skipIfNoNetAdmin(t, err)
 		t.Fatal(err)
 	}
 	if err := ConnectNetwork("ctr1", "used"); err != nil {
@@ -134,6 +152,7 @@ func TestPrune(t *testing.T) {
 func TestAllocateOn(t *testing.T) {
 	testNetOverride(t)
 	nw, err := CreateNetwork("ipamnet", "", "172.25.0.0/16")
+	skipIfNoNetAdmin(t, err)
 	if err != nil {
 		t.Fatalf("CreateNetwork: %v", err)
 	}
