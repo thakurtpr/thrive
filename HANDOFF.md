@@ -5,6 +5,18 @@
 
 ---
 
+## Milestone 2026-09-19 — CI fully green (all 5 jobs)
+
+Run `36389970115` (`852aa05`): Build Linux + macOS + Windows + Lint + E2E
+all success. Prior mains were red for months (compose `-f` panic broke
+every CLI invocation incl. all of E2E; cgroup/network unit failures on top).
+The 9-commit stack since `414f079` took it green:
+`cf0b616` R2+R3 → `d3c9405` ps → `6dd81dd` stats/images → `4a47d4d`
+top/port/diff → `ac63441` create → `b9effae` refuse-flags → `e11f71c`
+service locks → `a13bb9e` compose ops → `852aa05` CI triage.
+
+---
+
 ## Session 2026-09-19 — CI triage: cgroup Stats bug + net-admin skips
 
 ### What was done
