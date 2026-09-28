@@ -3,6 +3,7 @@
 package commands
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -225,6 +226,18 @@ func TestComposeServiceOps_Flags(t *testing.T) {
 func TestRmCmd_ForceFlag(t *testing.T) {
 	if f := RmCmd().Flags().Lookup("force"); f == nil {
 		t.Error("RmCmd: missing --force flag")
+	}
+}
+
+// TestBuildNsenterArgs verifies the nsenter prefix pins --root to the
+// target's root (otherwise fs writes land on the host).
+func TestBuildNsenterArgs(t *testing.T) {
+	args := buildNsenterArgs(485)
+	joined := strings.Join(args, " ")
+	for _, want := range []string{"--target 485", "--mount", "--root /proc/485/root", "--"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("nsenter args %q: missing %q", joined, want)
+		}
 	}
 }
 

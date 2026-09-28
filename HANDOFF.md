@@ -5,6 +5,29 @@
 
 ---
 
+## Session 2026-09-19 — nsenter --root (e2e still red after copy fix)
+
+### What was done
+Copy-mode fix didn't heal e2e DIFF_OK: full-log analysis showed no exec
+output at all. Root cause one layer deeper — nsenter enters namespaces
+but not the target's chroot, so `touch /e2e-diff-file` landed on the host
+(and read-only `uname -a` probes masked it for months).
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `--root /proc/<pid>/root` in both nsenter call sites (CLI + daemon); CLI argv extracted to testable `buildNsenterArgs` | `cmd/thrive/commands/exec.go`, `cmd/thrived/exec.go` |
+| 2 | `TestBuildNsenterArgs` asserts target/mount/root/separator (linux CI) | `cmd/thrive/commands/commands_phase_test.go` |
+| 3 | E2E asserts `EXEC_EXIT:0` before `DIFF_OK`; exec stderr no longer swallowed | `scripts/e2e-docker.sh` |
+
+### Verification
+- Full `go test ./...` 13 ok, 0 FAIL (host); `go build` + `go vet` CLEAN host/linux/windows; linux commands+thrived `go test -c` compiles; `bash -n` clean
+- E2E on this push is the real verdict (exec→touch→diff chain); pushed
+
+### Next
+- Watch CI e2e; remaining known item is the `stats` default-flip decision
+
+---
+
 ## Session 2026-09-19 — Copy-mode diff/commit (e2e DIFF_OK failure)
 
 ### What was done

@@ -764,9 +764,13 @@ func handleExec(ctx context.Context, req *Request, w io.Writer) {
 	var execCmd *exec.Cmd
 	if state.HasNamespaces {
 		// Container was started with namespace isolation — enter namespaces via nsenter.
+		// --root pins the process to the container's root (nsenter does not
+		// follow the target's chroot on its own; without it writes land on
+		// the host). /proc/<pid>/root also covers chroot-only containers.
 		nsenterArgs := []string{
 			"--target", strconv.Itoa(state.PID),
 			"--mount", "--pid", "--ipc", "--uts", "--net",
+			"--root", "/proc/" + strconv.Itoa(state.PID) + "/root",
 			"--",
 		}
 		nsenterArgs = append(nsenterArgs, cmd...)

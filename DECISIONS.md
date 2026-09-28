@@ -276,6 +276,22 @@ squashed layer mounted under a later copy fallback won't apply whiteouts
 across generations. Accepted for v1: correctness (no silent empty diffs)
 over storage optimality.
 
+## nsenter --root (2026-09-19)
+
+### Context
+`thrive exec` entered the container's namespaces via nsenter but never its
+root: nsenter changes namespaces, not the caller's chroot. Filesystem
+writes (e.g. `touch /x`) landed on the host. Found because copy-mode
+`diff` stayed empty even after the merged-vs-lower fix — the file was
+never in the container. Read-only probes (`uname -a`) masked it.
+
+### Decision
+Both nsenter call sites (Linux CLI, VM daemon) pass
+`--root /proc/<pid>/root`, which always tracks the target's root,
+including chroot-only containers. E2E now asserts the exec exit code
+before the diff assertion so a future exec regression is diagnosable
+instead of silent.
+
 ## R3 (2026-09-19) — cosign verification is host-side
 
 ### Context

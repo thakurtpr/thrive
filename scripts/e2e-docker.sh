@@ -270,7 +270,10 @@ test_diff_commit() {
   log_info "--- test: diff + commit ---"
   out=$(exec_in '
     thrive run --detach --name e2e-diff alpine:3.19 sleep 60 2>&1 >/dev/null
-    thrive exec e2e-diff touch /e2e-diff-file 2>&1 >/dev/null
+    thrive exec e2e-diff touch /e2e-diff-file 2>&1
+    echo "EXEC_EXIT:$?"
+    thrive diff e2e-diff 2>&1
+    echo "DIFF_EXIT:$?"
     thrive diff e2e-diff 2>&1 | grep -q e2e-diff-file && echo "DIFF_OK"
     thrive commit e2e-diff e2e-commit-test:v1 2>&1 | grep -q committed && echo "COMMIT_OK"
     thrive images 2>&1 | grep -q e2e-commit-test && echo "IMAGES_OK"
@@ -279,7 +282,7 @@ test_diff_commit() {
     thrive rm -f e2e-diff 2>&1 >/dev/null
     echo ALL_DONE
   ')
-  for marker in DIFF_OK COMMIT_OK IMAGES_OK ALL_DONE; do
+  for marker in EXEC_EXIT:0 DIFF_OK COMMIT_OK IMAGES_OK ALL_DONE; do
     if echo "$out" | grep -q "$marker"; then
       log_ok "diff/commit: $marker"
     else

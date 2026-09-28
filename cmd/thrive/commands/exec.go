@@ -50,11 +50,6 @@ func ExecCmd() *cobra.Command {
 				os.Exit(1)
 			}
 
-			nsenterArgs := []string{
-				"--target", strconv.Itoa(state.PID),
-				"--mount", "--pid", "--ipc", "--uts", "--net",
-				"--",
-			}
 			// Env via the env(1) prefix (no nsenter version dependency);
 			// workdir via sh cd+exec wrapper for the same reason.
 			if len(envVars) > 0 {
@@ -67,6 +62,7 @@ func ExecCmd() *cobra.Command {
 			_ = interactive
 			_ = tty
 
+			nsenterArgs := buildNsenterArgs(state.PID)
 			nsenterArgs = append(nsenterArgs, command...)
 
 			os.Exit(execInContainerNS(ctx, nsenterArgs))
@@ -80,6 +76,21 @@ func ExecCmd() *cobra.Command {
 	// are not mistaken for thrive exec flags.
 	cmd.Flags().SetInterspersed(false)
 	return cmd
+}
+
+// buildNsenterArgs returns the nsenter prefix (through "--") for entering
+// a container's namespaces. --root pins the process to the container's
+// root: nsenter changes namespaces but NOT the caller's chroot, so without
+// it filesystem writes land on the host (found via e2e diff: touch missed
+// the container). /proc/<pid>/root always tracks the target's root,
+// including chroot-only containers.
+func buildNsenterArgs(pid int) []string {
+	return []string{
+		"--target", strconv.Itoa(pid),
+		"--mount", "--pid", "--ipc", "--uts", "--net",
+		"--root", "/proc/" + strconv.Itoa(pid) + "/root",
+		"--",
+	}
 }
 
 // execInContainerNS runs a prebuilt nsenter argv, returning the exit code.
