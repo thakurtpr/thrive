@@ -153,43 +153,48 @@ func ComposeCmd() *cobra.Command {
 		return ids, nil
 	}
 
-	forEachContainer := func(bridgeCmd string) func(cmd *cobra.Command, args []string) error {
-		return func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			for _, svc := range args {
-				ids, err := serviceContainerIDs(ctx, svc)
-				if err != nil {
-					return err
-				}
-				for _, id := range ids {
-					if _, err := vm.DialControl(ctx, bridgeCmd, []string{id}, nil); err != nil {
-						return fmt.Errorf("%s %s: %w", bridgeCmd, svc, err)
-					}
-				}
-			}
-			return nil
-		}
-	}
-
-	stop := &cobra.Command{Use: "stop [service...]", Short: "Stop service containers", RunE: forEachContainer("stop")}
-	start := &cobra.Command{Use: "start [service...]", Short: "Start service containers", RunE: forEachContainer("start")}
-	kill := &cobra.Command{Use: "kill [service...]", Short: "Kill service containers", RunE: forEachContainer("kill")}
-	rm := &cobra.Command{Use: "rm [service...]", Short: "Remove service containers", RunE: forEachContainer("rm")}
-	restart := &cobra.Command{Use: "restart [service...]", Short: "Restart service containers", RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
+	forEachContainerWithOpts := func(ctx context.Context, bridgeCmd string, args []string, opts map[string]any) error {
 		for _, svc := range args {
 			ids, err := serviceContainerIDs(ctx, svc)
 			if err != nil {
 				return err
 			}
 			for _, id := range ids {
-				if _, err := vm.DialControl(ctx, "restart", []string{id}, nil); err != nil {
-					return fmt.Errorf("restart %s: %w", svc, err)
+				if _, err := vm.DialControl(ctx, bridgeCmd, []string{id}, opts); err != nil {
+					return fmt.Errorf("%s %s: %w", bridgeCmd, svc, err)
 				}
 			}
 		}
 		return nil
+	}
+
+	forEachContainer := func(bridgeCmd string) func(cmd *cobra.Command, args []string) error {
+		return func(cmd *cobra.Command, args []string) error {
+			return forEachContainerWithOpts(cmd.Context(), bridgeCmd, args, nil)
+		}
+	}
+
+	stop := &cobra.Command{Use: "stop [service...]", Short: "Stop service containers", RunE: func(cmd *cobra.Command, args []string) error {
+		timeout, _ := cmd.Flags().GetInt("timeout")
+		return forEachContainerWithOpts(cmd.Context(), "stop", args, map[string]any{"timeout": timeout})
 	}}
+	stop.Flags().IntP("timeout", "t", 10, "Stop timeout in seconds")
+	start := &cobra.Command{Use: "start [service...]", Short: "Start service containers", RunE: forEachContainer("start")}
+	kill := &cobra.Command{Use: "kill [service...]", Short: "Kill service containers", RunE: func(cmd *cobra.Command, args []string) error {
+		signal, _ := cmd.Flags().GetString("signal")
+		return forEachContainerWithOpts(cmd.Context(), "kill", args, map[string]any{"signal": signal})
+	}}
+	kill.Flags().StringP("signal", "s", "KILL", "Signal to send (KILL, TERM, or number)")
+	rm := &cobra.Command{Use: "rm [service...]", Short: "Remove service containers", RunE: func(cmd *cobra.Command, args []string) error {
+		force, _ := cmd.Flags().GetBool("force")
+		return forEachContainerWithOpts(cmd.Context(), "rm", args, map[string]any{"force": force})
+	}}
+	rm.Flags().Bool("force", false, "Remove running containers (no -f shorthand: -f is --file on compose subs)")
+	restart := &cobra.Command{Use: "restart [service...]", Short: "Restart service containers", RunE: func(cmd *cobra.Command, args []string) error {
+		timeout, _ := cmd.Flags().GetInt("timeout")
+		return forEachContainerWithOpts(cmd.Context(), "restart", args, map[string]any{"timeout": timeout})
+	}}
+	restart.Flags().IntP("timeout", "t", 10, "Restart timeout in seconds")
 	execSvc := &cobra.Command{
 		Use:   "exec [service] [command...]",
 		Short: "Execute a command in a service container",

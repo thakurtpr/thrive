@@ -5,6 +5,34 @@
 
 ---
 
+## Session 2026-09-19 — Compose ops flags + daemon opts + rm --force
+
+### What was done
+Forwarded compose stop/kill/restart/rm flags end-to-end. Audit found the
+daemon hardcoded 10s/SIGKILL and ignored filter args; proxy ComposeCmd
+panicked on construction (`-f` shorthand collision). A second latent panic
+was found and fixed on Linux (same collision — `thrive compose` was broken
+there too, including its own unit tests).
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | Daemon honors `timeout` (stop/restart), `signal` KILL/TERM/number (kill, new `parseSignalString`), `force` (rm refuses running unless forced, kills first) | `cmd/thrived/exec.go` (+ `exec_test.go` signal test, linux CI) |
+| 2 | Proxy compose stop/kill/restart/rm register --timeout/--signal/--force and forward per-container opts | `compose_stub.go` |
+| 3 | Top-level `rm` gains --force/-f on Linux and proxy (docker parity; daemon refuses running without it) | `rm.go`, `rm_proxy.go` |
+| 4 | Fixed `-f` shorthand collision (compose --file vs rm --force): compose rm --force is long-only, both platforms | `compose.go`, `compose_stub.go` |
+| 5 | Parity-locking flag tests both sides | `commands_test.go`, `commands_phase_test.go` |
+
+### Verification
+- Full `go test ./...` 13 ok, 0 FAIL (incl. new proxy flag tests live)
+- `go build` + `go vet` CLEAN host/linux/windows; `go test -c` compiles linux commands+thrived, windows commands
+- Daemon paths + linux rm --force need Linux CI (pushed)
+
+### Next
+- Check CI on the pushed stack (prior main may already have been red from the compose panic)
+- `stats` default flip to streaming left as a deliberate breaking change for later
+
+---
+
 ## Session 2026-09-19 — Parity sweep: buildx/compose refuse-flags
 
 ### What was done

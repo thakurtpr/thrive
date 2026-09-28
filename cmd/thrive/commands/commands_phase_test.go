@@ -193,6 +193,41 @@ func TestComposeUp_Flags(t *testing.T) {
 	}
 }
 
+// TestComposeServiceOps_Flags verifies Linux compose service ops expose
+// timeout/signal/force. Must match the proxy TestComposeServiceOps_Flags —
+// change both together.
+func TestComposeServiceOps_Flags(t *testing.T) {
+	subs := map[string]*cobra.Command{}
+	for _, sub := range ComposeCmd().Commands() {
+		subs[sub.Use] = sub
+	}
+	cases := map[string][]string{
+		"stop [service...]":    {"timeout"},
+		"kill [service...]":    {"signal"},
+		"restart [service...]": {"timeout"},
+		"rm [service...]":      {"force"},
+	}
+	for use, flags := range cases {
+		sub, ok := subs[use]
+		if !ok {
+			t.Fatalf("ComposeCmd: missing %q subcommand", use)
+		}
+		for _, flagName := range flags {
+			if f := sub.Flags().Lookup(flagName); f == nil {
+				t.Errorf("compose %q: missing --%s flag", use, flagName)
+			}
+		}
+	}
+}
+
+// TestRmCmd_ForceFlag verifies Linux rm exposes --force (docker parity:
+// refuse running containers unless forced).
+func TestRmCmd_ForceFlag(t *testing.T) {
+	if f := RmCmd().Flags().Lookup("force"); f == nil {
+		t.Error("RmCmd: missing --force flag")
+	}
+}
+
 // TestR2FlagDepth verifies R2 Docker-parity flags exist.
 func TestR2FlagDepth(t *testing.T) {
 	for _, flagName := range []string{"platform", "quiet", "all-tags", "verify", "verify-key"} {

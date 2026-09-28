@@ -494,3 +494,37 @@ func TestComposeUp_BuildFlag(t *testing.T) {
 		}
 	}
 }
+
+// TestComposeServiceOps_Flags verifies compose stop/kill/restart/rm expose
+// the Linux flags (timeout/signal/force) instead of `unknown flag`.
+func TestComposeServiceOps_Flags(t *testing.T) {
+	subs := map[string]*cobra.Command{}
+	for _, sub := range commands.ComposeCmd().Commands() {
+		subs[sub.Use] = sub
+	}
+	cases := map[string][]string{
+		"stop [service...]":    {"timeout"},
+		"kill [service...]":    {"signal"},
+		"restart [service...]": {"timeout"},
+		"rm [service...]":      {"force"},
+	}
+	for use, flags := range cases {
+		sub, ok := subs[use]
+		if !ok {
+			t.Fatalf("ComposeCmd proxy: missing %q subcommand", use)
+		}
+		for _, flagName := range flags {
+			if f := sub.Flags().Lookup(flagName); f == nil {
+				t.Errorf("compose %q proxy: missing --%s flag", use, flagName)
+			}
+		}
+	}
+}
+
+// TestRmCmd_ForceFlag verifies top-level rm exposes --force (docker parity
+// with the daemon, which refuses running containers unless forced).
+func TestRmCmd_ForceFlag(t *testing.T) {
+	if f := commands.RmCmd().Flags().Lookup("force"); f == nil {
+		t.Error("RmCmd proxy: missing --force flag")
+	}
+}

@@ -229,7 +229,7 @@ func ComposeCmd() *cobra.Command {
 			return compose.Rm(context.Background(), cf, getProject(), args, force)
 		},
 	}
-	rm.Flags().BoolP("force", "f", false, "Remove running containers")
+	rm.Flags().Bool("force", false, "Remove running containers (no -f shorthand: -f is --file on compose subs)")
 
 	execSvc := &cobra.Command{
 		Use:   "exec [service] [command...]",

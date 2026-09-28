@@ -10,13 +10,14 @@ import (
 )
 
 func RmCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "rm",
 		Short: "Remove a container",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			containerID := args[0]
-			_, err := vm.DialControl(cmd.Context(), "rm", []string{containerID}, nil)
+			force, _ := cmd.Flags().GetBool("force")
+			_, err := vm.DialControl(cmd.Context(), "rm", []string{containerID}, map[string]any{"force": force})
 			if err != nil {
 				return fmt.Errorf("rm failed: %w", err)
 			}
@@ -24,4 +25,6 @@ func RmCmd() *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolP("force", "f", false, "Remove a running container (kills first)")
+	return cmd
 }

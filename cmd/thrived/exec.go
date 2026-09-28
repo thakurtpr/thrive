@@ -828,11 +828,28 @@ func handleKill(ctx context.Context, req *Request, w io.Writer) {
 		sendError(w, req.ID, 1, "kill requires container ID")
 		return
 	}
-	if err := runtime.Kill(ctx, req.Args[0], syscall.SIGKILL); err != nil {
+	sigStr, _ := req.Opts["signal"].(string)
+	if err := runtime.Kill(ctx, req.Args[0], parseSignalString(sigStr)); err != nil {
 		sendError(w, req.ID, 1, err.Error())
 		return
 	}
 	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{}})
+}
+
+// parseSignalString maps docker-style signals ("KILL", "TERM", or a signal
+// number) to syscall.Signal, defaulting to SIGKILL. Mirrors the Linux
+// compose kill parsing so proxy and native agree.
+func parseSignalString(s string) syscall.Signal {
+	if s == "" || s == "KILL" {
+		return syscall.SIGKILL
+	}
+	if s == "TERM" {
+		return syscall.SIGTERM
+	}
+	if n, err := strconv.Atoi(s); err == nil {
+		return syscall.Signal(n)
+	}
+	return syscall.SIGKILL
 }
 
 func handleStop(ctx context.Context, req *Request, w io.Writer) {
@@ -854,7 +871,11 @@ func handleStop(ctx context.Context, req *Request, w io.Writer) {
 
 	_ = runtime.Kill(ctx, id, syscall.SIGTERM)
 
-	deadline := time.Now().Add(10 * time.Second)
+	timeout := 10 * time.Second
+	if v, ok := req.Opts["timeout"].(float64); ok && v > 0 {
+		timeout = time.Duration(v * float64(time.Second))
+	}
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		time.Sleep(200 * time.Millisecond)
 		s, err := runtime.State(ctx, id)
@@ -917,7 +938,7 @@ func handleRestart(ctx context.Context, req *Request, w io.Writer) {
 	}
 	id := req.Args[0]
 
-	stopReq := &Request{ID: req.ID, Cmd: "stop", Args: []string{id}}
+	stopReq := &Request{ID: req.ID, Cmd: "stop", Args: []string{id}, Opts: req.Opts}
 	handleStop(ctx, stopReq, discardWriter{})
 
 	startReq := &Request{ID: req.ID, Cmd: "start", Args: []string{id}}
@@ -929,7 +950,21 @@ func handleRm(ctx context.Context, req *Request, w io.Writer) {
 		sendError(w, req.ID, 1, "rm requires container ID")
 		return
 	}
-	if err := runtime.Delete(ctx, req.Args[0]); err != nil {
+	id := req.Args[0]
+	force, _ := req.Opts["force"].(bool)
+	// Docker parity (mirrors compose.Rm): refuse to remove running
+	// containers unless forced; forced removal kills first.
+	if state, err := runtime.State(ctx, id); err == nil && state.Status == "running" {
+		if !force {
+			sendError(w, req.ID, 1, fmt.Sprintf("container %s is running (use --force)", id))
+			return
+		}
+		if err := runtime.Kill(ctx, id, syscall.SIGKILL); err != nil {
+			sendError(w, req.ID, 1, err.Error())
+			return
+		}
+	}
+	if err := runtime.Delete(ctx, id); err != nil {
 		sendError(w, req.ID, 1, err.Error())
 		return
 	}
