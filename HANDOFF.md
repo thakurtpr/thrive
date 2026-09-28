@@ -5,6 +5,26 @@
 
 ---
 
+## Session 2026-09-19 — Small helpers: swarm IO, scales, bytes
+
+### What was done
+Mopped up the remaining pure untested helpers: swarm file-read/JSON-print
+(!linux, host-runnable), compose scale parsing and byte formatting
+(linux, CI). One wrong assumption caught by the test itself:
+`printResultJSON` passes invalid JSON through raw (daemon errors stay
+readable) — asserted as documented behavior, not changed.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `TestReadComposeSpec`, `TestPrintResultJSON` (+ stdout-capture helper) | `swarm_proxy_test.go` (new, !linux) |
+| 2 | `TestParseScales`, `TestHumanBytes` table tests | `commands_phase_test.go` (linux, CI) |
+
+### Verification
+- New !linux tests PASS live; full `go test ./...` 13 ok, 0 FAIL
+- `go build` + `go vet` CLEAN host/linux/windows; linux `go test -c` compiles; pushed
+
+---
+
 ## Milestone 2026-09-19 — e2e 41/0, all jobs green
 
 Run `36420202061` (`42be979`): E2E **41 pass / 0 fail** — the copy-mode

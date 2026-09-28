@@ -243,6 +243,47 @@ func TestBuildNsenterArgs(t *testing.T) {
 	}
 }
 
+// TestParseScales verifies --scale service=num mapping incl. errors.
+func TestParseScales(t *testing.T) {
+	newCmd := func(values ...string) *cobra.Command {
+		cmd := &cobra.Command{Use: "up"}
+		cmd.Flags().StringArray("scale", nil, "")
+		for _, v := range values {
+			if err := cmd.Flags().Set("scale", v); err != nil {
+				t.Fatalf("set --scale: %v", err)
+			}
+		}
+		return cmd
+	}
+	scales, err := parseScales(newCmd("web=3", "api=1"))
+	if err != nil || scales["web"] != 3 || scales["api"] != 1 {
+		t.Errorf("parseScales valid: got %v, %v", scales, err)
+	}
+	if _, err := parseScales(newCmd("web")); err == nil {
+		t.Error("parseScales bare: expected error, got nil")
+	}
+	if _, err := parseScales(newCmd("web=-1")); err == nil {
+		t.Error("parseScales negative: expected error, got nil")
+	}
+	if got, err := parseScales(newCmd()); err != nil || len(got) != 0 {
+		t.Errorf("parseScales empty: got %v, %v", got, err)
+	}
+}
+
+// TestHumanBytes verifies byte formatting across units.
+func TestHumanBytes(t *testing.T) {
+	cases := map[int64]string{
+		0: "0B", 512: "512B", 1023: "1023B",
+		1024: "1.0KB", 1536: "1.5KB",
+		1048576: "1.0MB", 1073741824: "1.0GB",
+	}
+	for in, want := range cases {
+		if got := humanBytes(in); got != want {
+			t.Errorf("humanBytes(%d): got %q want %q", in, got, want)
+		}
+	}
+}
+
 // TestR2FlagDepth verifies R2 Docker-parity flags exist.
 func TestR2FlagDepth(t *testing.T) {
 	for _, flagName := range []string{"platform", "quiet", "all-tags", "verify", "verify-key"} {
