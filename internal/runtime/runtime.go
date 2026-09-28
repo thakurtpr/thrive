@@ -649,7 +649,28 @@ func saveState(dir string, state *ContainerState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "state.json"), data, 0644)
+	// Atomic write (temp + rename): readers must never observe a
+	// truncated file. Direct WriteFile caused "unexpected end of JSON
+	// input" races with concurrent State polls (found via e2e redis flake).
+	tmp, err := os.CreateTemp(dir, "state.json.tmp.*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()        //nolint:errcheck
+		os.Remove(tmpName) //nolint:errcheck
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName) //nolint:errcheck
+		return err
+	}
+	if err := os.Rename(tmpName, filepath.Join(dir, "state.json")); err != nil {
+		os.Remove(tmpName) //nolint:errcheck
+		return err
+	}
+	return nil
 }
 
 // envContains reports whether any entry in env has the given prefix.

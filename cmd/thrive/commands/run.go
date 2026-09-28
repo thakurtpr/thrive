@@ -148,11 +148,22 @@ func RunCmd() *cobra.Command {
 			}
 
 			// Non-TTY foreground: poll until stopped, then stream logs.
+			// Transient State errors (e.g. container teardown races) are
+			// retried; only persistent loss fails loudly — a silent break
+			// here once swallowed output and exited 0 (e2e redis flake).
+			consecutiveErrors := 0
 			for {
 				state, err := runtime.State(ctx, container.ID)
 				if err != nil {
-					break
+					consecutiveErrors++
+					if consecutiveErrors >= 50 {
+						fmt.Fprintf(os.Stderr, "Error: lost container state for %s: %v\n", container.ID, err)
+						os.Exit(1)
+					}
+					time.Sleep(100 * time.Millisecond)
+					continue
 				}
+				consecutiveErrors = 0
 				if state.Status == "stopped" {
 					logPath := "/run/thrive/containers/" + container.ID + "/logs"
 					if logData, readErr := os.ReadFile(logPath); readErr == nil {

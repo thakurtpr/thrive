@@ -326,3 +326,17 @@ Streaming is now implemented (2s client-side poll until SIGINT, one-shot
 per-container fetch on the daemon), but the default stays one-shot for
 back-compat. Pass `--no-stream=false` to stream. Flipping the default is
 a deliberate breaking change left for a later release.
+
+## Atomic state writes + loud run loop (2026-09-19)
+
+### Context
+E2E `run redis` flaked: `loadState: unmarshal: unexpected end of JSON
+input`, then the foreground CLI exited 0 with no output. Two compounding
+causes: `saveState` truncated-then-wrote (concurrent readers saw empty
+files), and the run poll loop silently `break` on any State error.
+
+### Decision
+State files are written temp+rename (readers see old-complete or
+new-complete, never truncated). The foreground loop retries transient
+State errors and fails loudly (exit 1) after ~5s of continuous loss
+instead of silently succeeding with no output.

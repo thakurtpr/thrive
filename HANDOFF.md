@@ -5,6 +5,29 @@
 
 ---
 
+## Session 2026-09-19 — Atomic state.json + loud run loop (e2e redis flake)
+
+### What was done
+CI e2e went 40/41: `run redis` printed pull/create logs, then EXIT:0 with
+no output. Log showed `loadState: unmarshal: unexpected end of JSON input`
+— `saveState` truncated-then-wrote while the run loop polled, and the loop
+silently broke on any error (success with no output).
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `saveState` writes temp + rename (atomic readers) | `internal/runtime/runtime.go` |
+| 2 | Foreground run loop retries transient State errors; exit 1 after ~5s of continuous loss | `cmd/thrive/commands/run.go` |
+
+### Verification
+- Full `go test ./...` 13 ok, 0 FAIL (host, incl. existing saveState roundtrip)
+- `go build` + `go vet` CLEAN host/linux/windows; linux runtime/commands `go test -c` compiles
+- The redis e2e case is the regression test (racy by nature); pushed
+
+### Next
+- Watch CI e2e; remaining known item is the `stats` default-flip decision
+
+---
+
 ## Session 2026-09-19 — Small helpers: swarm IO, scales, bytes
 
 ### What was done
