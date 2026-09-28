@@ -7,12 +7,14 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sigstore/sigstore-go/pkg/sign"
@@ -123,5 +125,36 @@ func TestLoadCosignVerifier_BadInputs(t *testing.T) {
 	}
 	if _, err := loadCosignVerifier(derBad); err == nil {
 		t.Error("invalid DER: expected error, got nil")
+	}
+}
+
+// TestVerifyCosignImage_BadKey verifies a missing key file fails before any
+// network access (key load is first).
+func TestVerifyCosignImage_BadKey(t *testing.T) {
+	err := VerifyCosignImage(t.Context(), "alpine:latest", "/nonexistent/cosign.pub", "", "")
+	if err == nil || !strings.Contains(err.Error(), "read key") {
+		t.Errorf("missing key: got %v, want read-key error", err)
+	}
+}
+
+// TestVerifyCosignImage_BadRef verifies an unparseable ref fails after a
+// valid key loads (still no network).
+func TestVerifyCosignImage_BadRef(t *testing.T) {
+	kp, err := sign.NewEphemeralKeypair(nil)
+	if err != nil {
+		t.Fatalf("NewEphemeralKeypair: %v", err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(kp.GetPublicKey())
+	if err != nil {
+		t.Fatalf("MarshalPKIXPublicKey: %v", err)
+	}
+	keyPath := filepath.Join(t.TempDir(), "cosign.pub")
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der})
+	if err := os.WriteFile(keyPath, pemBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	err = VerifyCosignImage(t.Context(), ":::not-a-ref", keyPath, "", "")
+	if err == nil || !strings.Contains(err.Error(), "parse reference") {
+		t.Errorf("bad ref: got %v, want parse-reference error", err)
 	}
 }
