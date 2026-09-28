@@ -284,6 +284,43 @@ func TestHumanBytes(t *testing.T) {
 	}
 }
 
+// TestMiscCmds_Registration verifies the misc commands and their
+// subcommands exist on Linux. Must match TestMiscCmds_RegistrationProxy —
+// change both together.
+func TestMiscCmds_Registration(t *testing.T) {
+	for name, cmd := range map[string]*cobra.Command{
+		"Attach": AttachCmd(), "Version": VersionCmd(), "Node": NodeCmd(),
+		"Config": ConfigCmd(), "Builder": BuilderCmd(), "Image": ImageCmd(),
+		"Container": ContainerCmd(),
+	} {
+		if cmd.Use == "" {
+			t.Errorf("%sCmd: Use field is empty", name)
+		}
+	}
+	subs := func(root *cobra.Command) map[string]bool {
+		m := map[string]bool{}
+		for _, sub := range root.Commands() {
+			m[sub.Use] = true
+		}
+		return m
+	}
+	for _, want := range []string{"ls", "inspect [node]", "promote [node]", "demote [node]", "ps [node]"} {
+		if !subs(NodeCmd())[want] {
+			t.Errorf("NodeCmd: missing %q", want)
+		}
+	}
+	for _, want := range []string{"create [name] [file|-]", "ls", "inspect [config]", "rm [config]"} {
+		if !subs(ConfigCmd())[want] {
+			t.Errorf("ConfigCmd: missing %q", want)
+		}
+	}
+	for _, want := range []string{"du", "prune"} {
+		if !subs(BuilderCmd())[want] {
+			t.Errorf("BuilderCmd: missing %q", want)
+		}
+	}
+}
+
 // TestR2FlagDepth verifies R2 Docker-parity flags exist.
 func TestR2FlagDepth(t *testing.T) {
 	for _, flagName := range []string{"platform", "quiet", "all-tags", "verify", "verify-key"} {

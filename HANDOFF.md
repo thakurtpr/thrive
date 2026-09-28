@@ -5,6 +5,26 @@
 
 ---
 
+## Session 2026-09-19 — Misc command registration locks
+
+### What was done
+Neither build asserted the misc commands (attach/version/node/config/
+builder/image/container) exist — a deletion from `main.go` would pass all
+suites silently. Added Use-existence locks for all 7 plus subcommand lists
+for node/config/builder (+ prune on image/container), cross-linked linux ↔
+proxy like the other parity locks.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `TestMiscCmds_Registration` (linux, CI) | `commands_phase_test.go` |
+| 2 | `TestMiscCmds_RegistrationProxy` (live PASS) | `commands_test.go` |
+
+### Verification
+- Proxy test PASS live; full `go test ./...` 13 ok, 0 FAIL
+- `go build` + `go vet` CLEAN host/linux/windows; linux `go test -c` compiles; pushed
+
+---
+
 ## Session 2026-09-19 — Atomic state.json + loud run loop (e2e redis flake)
 
 ### What was done

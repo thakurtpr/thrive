@@ -528,3 +528,49 @@ func TestRmCmd_ForceFlag(t *testing.T) {
 		t.Error("RmCmd proxy: missing --force flag")
 	}
 }
+
+// TestMiscCmds_RegistrationProxy verifies the misc proxy commands and their
+// subcommands exist. Must match TestMiscCmds_Registration (linux) — change
+// both together.
+func TestMiscCmds_RegistrationProxy(t *testing.T) {
+	for name, cmd := range map[string]*cobra.Command{
+		"Attach": commands.AttachCmd(), "Version": commands.VersionCmd(),
+		"Node": commands.NodeCmd(), "Config": commands.ConfigCmd(),
+		"Builder": commands.BuilderCmd(), "Image": commands.ImageCmd(),
+		"Container": commands.ContainerCmd(),
+	} {
+		if cmd.Use == "" {
+			t.Errorf("%sCmd proxy: Use field is empty", name)
+		}
+	}
+	subs := func(root *cobra.Command) map[string]bool {
+		m := map[string]bool{}
+		for _, sub := range root.Commands() {
+			m[sub.Use] = true
+		}
+		return m
+	}
+	for _, want := range []string{"ls", "inspect [node]", "promote [node]", "demote [node]", "ps [node]"} {
+		if !subs(commands.NodeCmd())[want] {
+			t.Errorf("NodeCmd proxy: missing %q", want)
+		}
+	}
+	for _, want := range []string{"create [name] [file|-]", "ls", "inspect [config]", "rm [config]"} {
+		if !subs(commands.ConfigCmd())[want] {
+			t.Errorf("ConfigCmd proxy: missing %q", want)
+		}
+	}
+	for _, want := range []string{"du", "prune"} {
+		if !subs(commands.BuilderCmd())[want] {
+			t.Errorf("BuilderCmd proxy: missing %q", want)
+		}
+	}
+	for _, want := range []string{"prune"} {
+		if !subs(commands.ImageCmd())[want] {
+			t.Errorf("ImageCmd proxy: missing %q", want)
+		}
+		if !subs(commands.ContainerCmd())[want] {
+			t.Errorf("ContainerCmd proxy: missing %q", want)
+		}
+	}
+}
