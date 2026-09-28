@@ -14,7 +14,7 @@
 | pkg/dag | dag_test.go | ~80% | stable | topological sort + cycle detection fully tested |
 | pkg/thrivefile | thrivefile_test.go | ~75% | stable | YAML parsing for all directives verified |
 | internal/lazypull | lazypull_test.go | ~55% | improved | 11 tests: fetch paths, cache hits, HTTP errors |
-| cmd/thrive/commands | *_test.go | ~27% (host-measured; higher on Linux) | improved | shared output helpers (ps/stats/images/top/port/diff) at 95–100%; flag-parity locks for create/service/buildx/compose/rm; logic is thin by design |
+| cmd/thrive/commands | *_test.go | ~33% (host-measured; higher on Linux) | improved | shared output helpers at 95–100%; flag-parity locks; bridge-opts mapping tested; logic is thin by design |
 | internal/vm (desktop) | darwin_launcher_test.go, wsl2_launcher_test.go, hyperv_launcher_test.go, download_test.go, vsock_darwin_test.go | ~80% | stable | 28 tests, all PASS |
 | internal/signing | cosign_test.go | 50% | new | offline bundle/SimpleSigning roundtrips + key-input errors (host-measured); live registry verify needs network |
 

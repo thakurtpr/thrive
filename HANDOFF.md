@@ -5,6 +5,27 @@
 
 ---
 
+## Session 2026-09-19 — Dedupe run/create bridge opts + test
+
+### What was done
+`run` and `create` proxies each built the bridge opts map inline (~50 lines
+duplicated, untestable inside `RunE` closures). Extracted a pure portable
+`containerOpts(cmd, runFlags)` helper plus the port parsers into
+`opts_shared.go`; both proxies delegate. Flag-state tests set real cobra
+flags and assert the exact map, incl. absent-when-unset and run-only
+exclusion on create. Commands coverage 30.6% → 32.6% (host-measured).
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `containerOpts` + moved port parsers (deleted ~70 duplicated lines) | `opts_shared.go` (new), `run_proxy.go`, `lifecycle_proxy.go` |
+| 2 | `TestContainerOpts_Run/Create` (!linux internal tests) | `run_proxy_test.go` |
+
+### Verification
+- New tests 2/2 PASS; full `go test ./...` 13 ok, 0 FAIL
+- `go build` + `go vet` CLEAN host/linux/windows; `go test -c` compiles linux+windows commands; pushed
+
+---
+
 ## Session 2026-09-19 — runSign hermetic tests
 
 ### What was done

@@ -42,43 +42,7 @@ func CreateCmd() *cobra.Command {
 		Short: "Create a container without starting it",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts := map[string]any{}
-			if v := cmd.Flag("name").Value.String(); v != "" {
-				opts["name"] = v
-			}
-			if v, _ := cmd.Flags().GetStringArray("env"); len(v) > 0 {
-				opts["env"] = v
-			}
-			if v, _ := cmd.Flags().GetStringArray("secret"); len(v) > 0 {
-				opts["secrets"] = v
-			}
-			if v, _ := cmd.Flags().GetStringArray("config"); len(v) > 0 {
-				opts["configs"] = v
-			}
-			if v, _ := cmd.Flags().GetStringArray("publish"); len(v) > 0 {
-				opts["ports"] = parseProxyPortSpecs(v)
-			}
-			if v, _ := cmd.Flags().GetStringArray("volume"); len(v) > 0 {
-				opts["volumes"] = v
-			}
-			if v := cmd.Flag("network").Value.String(); v != "" {
-				opts["network"] = v
-			}
-			if v, _ := cmd.Flags().GetString("memory"); v != "" {
-				opts["memory"] = v
-			}
-			if v, _ := cmd.Flags().GetFloat64("cpus"); v > 0 {
-				opts["cpus"] = v
-			}
-			if v, _ := cmd.Flags().GetInt64("cpu-shares"); v > 0 {
-				opts["cpu_shares"] = v
-			}
-			if v, _ := cmd.Flags().GetInt64("pids-limit"); v > 0 {
-				opts["pids_limit"] = v
-			}
-			if v, _ := cmd.Flags().GetString("restart"); v != "" {
-				opts["restart"] = v
-			}
+			opts := containerOpts(cmd, false)
 			data, err := vm.DialControl(cmd.Context(), "create", args, opts)
 			if err != nil {
 				return fmt.Errorf("create failed: %w", err)

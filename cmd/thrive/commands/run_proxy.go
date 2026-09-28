@@ -5,7 +5,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/spf13/cobra"
 	"github.com/thakurprasadrout/thrive/internal/vm"
@@ -19,56 +18,7 @@ func RunCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
-			opts := map[string]any{
-				"detach":      cmd.Flag("detach").Value.String() == "true",
-				"rm":          cmd.Flag("rm").Value.String() == "true",
-				"tty":         cmd.Flag("tty").Value.String() == "true",
-				"interactive": cmd.Flag("interactive").Value.String() == "true",
-			}
-
-			if name := cmd.Flag("name").Value.String(); name != "" {
-				opts["name"] = name
-			}
-
-			if envVars, _ := cmd.Flags().GetStringArray("env"); len(envVars) > 0 {
-				opts["env"] = envVars
-			}
-
-			if secrets, _ := cmd.Flags().GetStringArray("secret"); len(secrets) > 0 {
-				opts["secrets"] = secrets
-			}
-
-			if configs, _ := cmd.Flags().GetStringArray("config"); len(configs) > 0 {
-				opts["configs"] = configs
-			}
-
-			if ports, _ := cmd.Flags().GetStringArray("publish"); len(ports) > 0 {
-				opts["ports"] = parseProxyPortSpecs(ports)
-			}
-
-			if volumes, _ := cmd.Flags().GetStringArray("volume"); len(volumes) > 0 {
-				opts["volumes"] = volumes
-			}
-
-			if netMode := cmd.Flag("network").Value.String(); netMode != "" {
-				opts["network"] = netMode
-			}
-
-			if v, _ := cmd.Flags().GetString("memory"); v != "" {
-				opts["memory"] = v
-			}
-			if v, _ := cmd.Flags().GetFloat64("cpus"); v > 0 {
-				opts["cpus"] = v
-			}
-			if v, _ := cmd.Flags().GetInt64("cpu-shares"); v > 0 {
-				opts["cpu_shares"] = v
-			}
-			if v, _ := cmd.Flags().GetInt64("pids-limit"); v > 0 {
-				opts["pids_limit"] = v
-			}
-			if v, _ := cmd.Flags().GetString("restart"); v != "" {
-				opts["restart"] = v
-			}
+			opts := containerOpts(cmd, true)
 
 			data, err := vm.DialControl(ctx, "run", args, opts)
 			if err != nil {
@@ -104,42 +54,4 @@ func RunCmd() *cobra.Command {
 	run.Flags().BoolP("interactive", "i", false, "Keep stdin open")
 
 	return run
-}
-
-// parseProxyPortSpecs converts "8080:80/tcp" → map[string]any for JSON transport.
-func parseProxyPortSpecs(specs []string) []map[string]any {
-	var ports []map[string]any
-	for _, spec := range specs {
-		proto := "tcp"
-		if idx := strings.LastIndex(spec, "/"); idx >= 0 {
-			proto = spec[idx+1:]
-			spec = spec[:idx]
-		}
-		idx := strings.Index(spec, ":")
-		if idx < 0 {
-			continue
-		}
-		hostPort := proxyParsePort(spec[:idx])
-		ctrPort := proxyParsePort(spec[idx+1:])
-		if hostPort == 0 || ctrPort == 0 {
-			continue
-		}
-		ports = append(ports, map[string]any{
-			"host_port":      hostPort,
-			"container_port": ctrPort,
-			"protocol":       proto,
-		})
-	}
-	return ports
-}
-
-func proxyParsePort(s string) int {
-	n := 0
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return 0
-		}
-		n = n*10 + int(c-'0')
-	}
-	return n
 }
