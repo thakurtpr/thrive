@@ -5,6 +5,31 @@
 
 ---
 
+## Session 2026-09-19 — verifyPulledImage tests + linux Remove SafeRef fix
+
+### What was done
+Made `verifyPulledImage` (0% coverage) testable via a package-level
+`cosignVerifyFunc` stub point — call sites unchanged. Testing it exposed a
+security-relevant bug: Linux `image.Remove` joined the **raw** ref while
+everything stores under `SafeRef`, so a failed `--verify` silently left the
+untrusted image behind (darwin was already correct).
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `cosignVerifyFunc` indirection in shared pull helper | `distribution_shared.go` |
+| 2 | 3 hermetic tests: pass-through, success args, failure returns false + removes image (skips cleanly when store unwritable, e.g. non-root Linux CI) | `distribution_internal_test.go` (new, portable) |
+| 3 | Linux `Remove` uses `SafeRef` (matches Pull/List/store layout); plus pre-existing double-blank-line gofmt | `internal/image/image.go` |
+
+### Verification
+- New tests 3/3 PASS (host); full `go test ./...` 13 ok, 0 FAIL
+- `go build` + `go vet` CLEAN host/linux/windows; `go test -c` compiles linux image/commands
+- Linux removal path needs root CI to execute (test skips otherwise); pushed
+
+### Next
+- Watch CI; remaining known item is the `stats` default-flip decision
+
+---
+
 ## Milestone 2026-09-19 — CI fully green (all 5 jobs)
 
 Run `36389970115` (`852aa05`): Build Linux + macOS + Windows + Lint + E2E

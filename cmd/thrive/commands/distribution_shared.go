@@ -25,13 +25,18 @@ func shortDigest(d string) string {
 	return truncateDigest(d, 12)
 }
 
+// cosignVerifyFunc verifies a pulled ref against a cosign key. Package
+// variable (not a parameter) so tests can stub the registry without
+// changing the linux/darwin call sites.
+var cosignVerifyFunc = signing.VerifyCosignImage
+
 // verifyPulledImage runs cosign verification when requested, removing the
 // image on failure so untrusted content is never left behind. Reports
 // pull output unless quiet. Returns false on failure (caller exits).
 // Shared by the linux and darwin pull paths (windows verifies in-VM).
 func verifyPulledImage(ctx context.Context, ref, pulledRef, digest, username, password string, verifyPull bool, verifyKey string, quiet bool) bool {
 	if verifyPull {
-		if err := signing.VerifyCosignImage(ctx, ref, verifyKey, username, password); err != nil {
+		if err := cosignVerifyFunc(ctx, ref, verifyKey, username, password); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: cosign verification failed for %s: %v\n", ref, err)
 			image.Remove(ctx, pulledRef) //nolint:errcheck
 			return false

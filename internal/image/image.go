@@ -30,7 +30,6 @@ import (
 	"github.com/thakurprasadrout/thrive/internal/telemetry"
 )
 
-
 // Push pushes a locally stored image to a remote registry by re-taring
 // the extracted layer directories and uploading them via go-containerregistry.
 func Push(ctx context.Context, ref string, opts PushOptions) error {
@@ -571,7 +570,9 @@ func Remove(ctx context.Context, imageRef string) error {
 	log := telemetry.Logger()
 	log.Info("image.Remove: starting", telemetry.FieldString("imageRef", imageRef))
 
-	imgDir := filepath.Join("/var/lib/thrive/images", imageRef)
+	// Images are stored under SafeRef (slashes/colons mapped); removing
+	// the raw ref would silently miss and leave content behind.
+	imgDir := filepath.Join("/var/lib/thrive/images", SafeRef(imageRef))
 	log.Info("image.Remove: removing image directory", telemetry.FieldString("path", imgDir))
 
 	if err := os.RemoveAll(imgDir); err != nil {
