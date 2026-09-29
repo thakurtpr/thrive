@@ -837,20 +837,10 @@ func handleKill(ctx context.Context, req *Request, w io.Writer) {
 	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{}})
 }
 
-// parseSignalString maps docker-style signals ("KILL", "TERM", or a signal
-// number) to syscall.Signal, defaulting to SIGKILL. Mirrors the Linux
-// compose kill parsing so proxy and native agree.
+// parseSignalString maps docker-style signals to syscall.Signal.
+// Thin wrapper over runtime.ParseSignal (single shared semantics).
 func parseSignalString(s string) syscall.Signal {
-	if s == "" || s == "KILL" {
-		return syscall.SIGKILL
-	}
-	if s == "TERM" {
-		return syscall.SIGTERM
-	}
-	if n, err := strconv.Atoi(s); err == nil {
-		return syscall.Signal(n)
-	}
-	return syscall.SIGKILL
+	return runtime.ParseSignal(s)
 }
 
 func handleStop(ctx context.Context, req *Request, w io.Writer) {

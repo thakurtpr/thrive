@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -96,5 +97,20 @@ func TestSaveAndLoadState_Roundtrip(t *testing.T) {
 	}
 	if got.PID != want.PID {
 		t.Errorf("PID: got %d, want %d", got.PID, want.PID)
+	}
+}
+
+// TestParseSignal verifies docker-style signal mapping shared by the Linux
+// compose kill path and the VM daemon (Linux CI).
+func TestParseSignal(t *testing.T) {
+	cases := map[string]syscall.Signal{
+		"": syscall.SIGKILL, "KILL": syscall.SIGKILL,
+		"TERM": syscall.SIGTERM, "9": syscall.Signal(9),
+		"15": syscall.Signal(15), "BOGUS": syscall.SIGKILL,
+	}
+	for in, want := range cases {
+		if got := ParseSignal(in); got != want {
+			t.Errorf("ParseSignal(%q): got %v want %v", in, got, want)
+		}
 	}
 }

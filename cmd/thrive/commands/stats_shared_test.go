@@ -85,3 +85,18 @@ func TestStatsNum_Coercions(t *testing.T) {
 		t.Errorf("statsStr missing: got %q", got)
 	}
 }
+
+// TestClearScreen_NonTerminal verifies piped/buffered output is untouched.
+func TestClearScreen_NonTerminal(t *testing.T) {
+	var buf bytes.Buffer
+	clearScreen(&buf)
+	if buf.Len() != 0 {
+		t.Errorf("buffered writer: got %q, want empty", buf.String())
+	}
+	clearScreen(writerFunc(func(p []byte) (int, error) { return len(p), nil }))
+}
+
+// writerFunc is an io.Writer that is not an *os.File.
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }

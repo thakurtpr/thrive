@@ -175,12 +175,14 @@ func StatsCmd() *cobra.Command {
 			defer stop()
 			ticker := time.NewTicker(2 * time.Second)
 			defer ticker.Stop()
+			clearScreen(os.Stdout)
 			printStatsSnapshot(ctx, args)
 			for {
 				select {
 				case <-streamCtx.Done():
 					return
 				case <-ticker.C:
+					clearScreen(os.Stdout)
 					printStatsSnapshot(ctx, args)
 				}
 			}

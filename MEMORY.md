@@ -57,6 +57,11 @@ github.com/thakurprasadrout/thrive
 
 ## Current phase
 [x] Phase 8 — P2P registry + chunk store complete. ALL PHASES IMPLEMENTED.
+[x] Phase 9 — coverage hardening to green CI (all 5 jobs green, e2e 41/0).
+[x] Phase 10 — network isolation (bridge/veth/NAT/DNS/CNI/ports).
+[x] Phase 11 — image signing (thrive-native Ed25519 + cosign verify).
+[x] Phase 12 — systemd units + Linux daemon.
+See ROADMAP.md for per-phase status and HANDOFF.md for session history.
 
 ## Important file locations
 - Container state: /run/thrive/containers/{id}/

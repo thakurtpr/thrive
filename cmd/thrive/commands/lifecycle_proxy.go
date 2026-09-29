@@ -132,6 +132,7 @@ func StatsCmd() *cobra.Command {
 			defer stop()
 			ticker := time.NewTicker(2 * time.Second)
 			defer ticker.Stop()
+			clearScreen(os.Stdout)
 			if err := printProxyStats(cmd, args); err != nil {
 				return err
 			}
@@ -140,6 +141,7 @@ func StatsCmd() *cobra.Command {
 				case <-ctx.Done():
 					return nil
 				case <-ticker.C:
+					clearScreen(os.Stdout)
 					if err := printProxyStats(cmd, args); err != nil {
 						return err
 					}

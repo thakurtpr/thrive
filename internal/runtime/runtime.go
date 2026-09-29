@@ -566,6 +566,23 @@ func isPermissionError(err error) bool {
 	return errors.As(err, &errno) && (errno == syscall.EPERM || errno == syscall.EACCES)
 }
 
+// ParseSignal maps docker-style signals ("KILL", "TERM", or a signal
+// number, case-sensitive like the CLI) to syscall.Signal, defaulting to
+// SIGKILL. Shared by the Linux compose kill path and the VM daemon so both
+// agree on every input.
+func ParseSignal(s string) syscall.Signal {
+	if s == "" || s == "KILL" {
+		return syscall.SIGKILL
+	}
+	if s == "TERM" {
+		return syscall.SIGTERM
+	}
+	if n, err := strconv.Atoi(s); err == nil {
+		return syscall.Signal(n)
+	}
+	return syscall.SIGKILL
+}
+
 // Kill sends a signal to the container's main process.
 func Kill(ctx context.Context, id string, signal syscall.Signal) error {
 	log := telemetry.Logger()

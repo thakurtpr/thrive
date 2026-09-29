@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"io"
+	"os"
 )
 
 // statsRow is one container's resource snapshot for `thrive stats` output.
@@ -34,6 +35,21 @@ func formatStatsTable(w io.Writer, rows []statsRow) {
 		fmt.Fprintf(w, "%-13s %-9s %-12d %-12d %-6d %d\n",
 			shortStatsID(r.ID), r.Status, r.MemCurrent, r.MemLimit, r.PIDs, r.CPUUsec)
 	}
+}
+
+// clearScreen homes the cursor when w is an interactive terminal, so
+// streaming stats redraw in place instead of scrolling. Piped or file
+// output is untouched (checked via char-device mode, no extra deps).
+func clearScreen(w io.Writer) {
+	f, ok := w.(*os.File)
+	if !ok {
+		return
+	}
+	fi, err := f.Stat()
+	if err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		return
+	}
+	fmt.Fprint(w, "\033[2J\033[H") //nolint:errcheck
 }
 
 // statsStr extracts a string field from a decoded daemon JSON result.

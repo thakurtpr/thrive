@@ -5,6 +5,26 @@
 
 ---
 
+## Session 2026-09-19 — v0.4.0 release + minors + vm-image race fix
+
+### What was done
+Tagged and pushed v0.4.0 (binaries live for all platforms), did the three
+minors, and fixed a release-race the tag push exposed.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | v0.4.0 tag pushed; Release workflow green, all binaries uploaded | (tag) |
+| 2 | Stats streaming redraws in place on TTYs (pipes untouched, no new deps) | `stats_shared.go`, `lifecycle.go`, `lifecycle_proxy.go`, `stats_shared_test.go` |
+| 3 | `runtime.ParseSignal` shared by compose kill + daemon (removed `syscall` import from compose CLI) | `internal/runtime/runtime.go`, `runtime_test.go`, `compose.go`, `cmd/thrived/exec.go` |
+| 4 | MEMORY.md phases current | `MEMORY.md` |
+| 5 | **Race fix:** vm-image upload failed `release not found` (goreleaser hadn't created it yet) — wait-for-release loop before upload | `.github/workflows/vm-image.yml` |
+
+### Verification
+- Full `go test ./...` 13 ok, 0 FAIL; builds + vet CLEAN host/linux/windows; runtime/commands/thrived linux `go test -c` compiles
+- Release v0.4.0 published with 9 assets; re-running vm-image workflow via dispatch to attach the tarball
+
+---
+
 ## Session 2026-09-19 — e2e compose up/ps/down
 
 ### What was done

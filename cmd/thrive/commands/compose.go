@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -190,14 +189,7 @@ func ComposeCmd() *cobra.Command {
 				return err
 			}
 			sigStr, _ := cmd.Flags().GetString("signal")
-			sig := syscall.SIGKILL
-			if sigStr != "" {
-				if n, err := strconv.Atoi(sigStr); err == nil {
-					sig = syscall.Signal(n)
-				} else if sigStr == "TERM" {
-					sig = syscall.SIGTERM
-				}
-			}
+			sig := runtime.ParseSignal(sigStr)
 			return compose.Kill(context.Background(), cf, getProject(), args, sig)
 		},
 	}
