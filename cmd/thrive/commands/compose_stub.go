@@ -154,7 +154,21 @@ func ComposeCmd() *cobra.Command {
 	}
 
 	forEachContainerWithOpts := func(ctx context.Context, bridgeCmd string, args []string, opts map[string]any) error {
-		for _, svc := range args {
+		services := args
+		if len(services) == 0 {
+			// No targets: operate on all services like Linux
+			// (filterServices falls back to all on empty).
+			baseOpts, err := specOpts(nil)
+			if err != nil {
+				return err
+			}
+			spec, _ := baseOpts["spec"].(string)
+			services, err = parseComposeServiceNames(spec)
+			if err != nil {
+				return err
+			}
+		}
+		for _, svc := range services {
 			ids, err := serviceContainerIDs(ctx, svc)
 			if err != nil {
 				return err

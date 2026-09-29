@@ -5,6 +5,25 @@
 
 ---
 
+## Session 2026-09-19 — Proxy compose empty-args = all services
+
+### What was done
+Fresh-eyes review found a real divergence: `compose stop/start/kill/rm/
+restart` with no service args silently did nothing on macOS/Windows (loop
+over zero args), while Linux operates on all services. The proxy can't use
+pkg/compose (linux-only), so it parses service names from the spec it
+already ships to the daemon.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `parseComposeServiceNames` (sorted, portable) + empty-args fallback in `forEachContainerWithOpts` | `compose_shared.go` (new), `compose_stub.go` |
+| 2 | `TestParseComposeServiceNames` (sorted/empty/invalid) | `compose_shared_test.go` (new) |
+
+### Verification
+- New test PASS; full suite 13 ok, 0 FAIL; builds + vet CLEAN host/linux/windows; pushed
+
+---
+
 ## Session 2026-09-19 — Race-detector sweep (all portable packages)
 
 ### What was done
