@@ -329,11 +329,15 @@ test_compose() {
     CF="thrive compose -f /tmp/e2e-compose/docker-compose.yml -p e2ecompose"
     $CF up 2>&1 | grep -q "started sleeper" && echo "UP_OK"
     $CF ps 2>&1 | grep -q "sleeper" && echo "PS_OK"
+    $CF stop 2>&1 >/dev/null
+    $CF ps 2>&1 | grep -q "stopped" && echo "STOP_OK"
+    $CF start 2>&1 >/dev/null
+    $CF ps 2>&1 | grep -q "running" && echo "START_OK"
     $CF down 2>&1 | grep -q "Stopping services" && echo "DOWN_OK"
     $CF down 2>&1 >/dev/null || true
     echo ALL_DONE
   ')
-  for marker in UP_OK PS_OK DOWN_OK ALL_DONE; do
+  for marker in UP_OK PS_OK STOP_OK START_OK DOWN_OK ALL_DONE; do
     if echo "$out" | grep -q "$marker"; then
       log_ok "compose: $marker"
     else

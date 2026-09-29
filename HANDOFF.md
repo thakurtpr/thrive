@@ -5,6 +5,25 @@
 
 ---
 
+## Session 2026-09-19 — e2e compose stop/start + coverage refresh (PR)
+
+### What was done
+Extended the compose e2e with bare `stop` (→ stopped), `start`
+(→ running) around the existing flow. Note: e2e runs the native Linux
+CLI, so this covers the native path; the proxy empty-args fallback is
+covered by unit tests (daemon bridge unreachable from CI macOS/Windows).
+Refreshed tracker: commands ~37%, signing ~79%, inspect 100%.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | STOP_OK/START_OK markers in compose flow | `scripts/e2e-docker.sh` |
+| 2 | Coverage numbers current | `TDD_PROGRESS.md` |
+
+### Verification
+- `bash -n` clean; unit suite green; shipped via PR after green CI
+
+---
+
 ## Session 2026-09-19 — Proxy compose empty-args = all services
 
 ### What was done
