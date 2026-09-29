@@ -5,6 +5,26 @@
 
 ---
 
+## Session 2026-09-19 — Live cosign verify tests (fake registry)
+
+### What was done
+Closed the mock-registry gap: full `VerifyCosignImage` plumbing now tested
+against an in-memory fake registry (loopback HTTP needs no special casing).
+Two real findings on the way: `remote.Write` pushes via `RawManifest`
+(a `Manifest`-only override is silently bypassed), and the wrong-key
+negative proves signatures are actually checked.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | Live roundtrip (push image + signed `.sig`, verify OK), wrong-key fails, missing `.sig` errors | `internal/signing/cosign_test.go` |
+| 2 | Signing coverage 55% → 79% (host-measured) | `TDD_PROGRESS.md` |
+
+### Verification
+- New tests PASS live; full `go test ./...` 13 ok, 0 FAIL
+- Builds + vet CLEAN host/linux/windows; linux signing `go test -c` compiles; pushed
+
+---
+
 ## Session 2026-09-19 — v0.4.0 release + minors + vm-image race fix
 
 ### What was done
