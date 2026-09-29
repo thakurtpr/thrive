@@ -559,8 +559,8 @@ func handleRun(ctx context.Context, req *Request, w io.Writer) {
 		for _, p := range portsRaw {
 			if pm, ok := p.(map[string]any); ok {
 				ports = append(ports, runtime.PortMapping{
-					HostPort:      int(pm["host_port"].(float64)),
-					ContainerPort: int(pm["container_port"].(float64)),
+					HostPort:      intOpt(pm, "host_port"),
+					ContainerPort: intOpt(pm, "container_port"),
 					Protocol:      stringOrDefault(pm["protocol"], "tcp"),
 				})
 			}

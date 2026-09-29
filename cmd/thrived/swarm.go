@@ -378,7 +378,14 @@ func handleStackRm(ctx context.Context, req *Request, w io.Writer) {
 }
 
 func intOpt(m map[string]any, key string) int {
-	if v, ok := m[key].(float64); ok {
+	switch v := m[key].(type) {
+	case float64:
+		return int(v)
+	case float32:
+		return int(v)
+	case int:
+		return v
+	case int64:
 		return int(v)
 	}
 	return 0
@@ -391,7 +398,8 @@ func stringOpt(m map[string]any, key, def string) string {
 	return def
 }
 
-func parseScaleArg(s string) (string, int, bool) {	for i := 0; i < len(s); i++ {
+func parseScaleArg(s string) (string, int, bool) {
+	for i := 0; i < len(s); i++ {
 		if s[i] == '=' {
 			var n int
 			if _, err := fmt.Sscanf(s[i+1:], "%d", &n); err != nil || n < 0 {

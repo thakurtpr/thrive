@@ -5,6 +5,24 @@
 
 ---
 
+## Session 2026-09-19 — Fix-all pass, item 1: daemon bridge hardening
+
+### What was done
+Swept all `cmd/thrived` bridge parsing: every `, _ :=` assertion is
+panic-safe; the single crasher was `handleRun` port parsing
+(`int(pm["host_port"].(float64))` — one malformed client message panics
+the VM daemon). Now uses tolerant `intOpt` (widened to int/int64/float32),
+matching `handleCreate`. Plus a pre-existing gofmt brace fix.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | Safe port parsing + widened `intOpt` + `TestIntOpt_Types` (linux CI) | `cmd/thrived/exec.go`, `swarm.go`, `exec_test.go` |
+
+### Verification
+- `go build` + `go vet` CLEAN host/linux/windows; linux thrived `go test -c` compiles; full host suite green; pushed
+
+---
+
 ## Session 2026-09-19 — stats default flipped to streaming
 
 ### What was done
