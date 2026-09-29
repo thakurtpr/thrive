@@ -321,6 +321,27 @@ test_pull_quiet() {
   fi
 }
 
+test_compose() {
+  log_info "--- test: compose up/ps/down ---"
+  out=$(exec_in '
+    mkdir -p /tmp/e2e-compose
+    printf "services:\n  sleeper:\n    image: alpine:3.19\n    command: [\"sleep\", \"60\"]\n" > /tmp/e2e-compose/docker-compose.yml
+    CF="thrive compose -f /tmp/e2e-compose/docker-compose.yml -p e2ecompose"
+    $CF up 2>&1 | grep -q "started sleeper" && echo "UP_OK"
+    $CF ps 2>&1 | grep -q "sleeper" && echo "PS_OK"
+    $CF down 2>&1 | grep -q "Stopping services" && echo "DOWN_OK"
+    $CF down 2>&1 >/dev/null || true
+    echo ALL_DONE
+  ')
+  for marker in UP_OK PS_OK DOWN_OK ALL_DONE; do
+    if echo "$out" | grep -q "$marker"; then
+      log_ok "compose: $marker"
+    else
+      log_fail "compose: $marker missing; full output: $out"
+    fi
+  done
+}
+
 # ── Image matrix ───────────────────────────────────────────────────────────
 IMAGES=(
   "alpine:3.19"
@@ -368,6 +389,7 @@ test_pull_quiet
 test_stats_snapshot
 test_diff_commit
 test_rm_force
+test_compose
 
 # ── Summary ───────────────────────────────────────────────────────────────
 echo ""

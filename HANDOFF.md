@@ -5,6 +5,24 @@
 
 ---
 
+## Session 2026-09-19 — e2e compose up/ps/down
+
+### What was done
+Compose was the only functional area with zero e2e. Added a hermetic flow
+on the cached alpine image: minimal one-service file, up (started marker),
+ps (service listed), down (stopping marker), idempotent second down.
+Markers chosen from exact CLI/engine output strings.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `test_compose` + call (UP_OK/PS_OK/DOWN_OK/ALL_DONE) | `scripts/e2e-docker.sh` |
+
+### Verification
+- `bash -n` clean; unit suite green; builds CLEAN
+- Live e2e runs in CI (pushed) — first run confirms the flow
+
+---
+
 ## Session 2026-09-19 — images table unify + golden tests
 
 ### What was done
