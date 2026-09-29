@@ -5,6 +5,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -20,17 +21,11 @@ func ImagesCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-
-			if len(imgs) == 0 {
-				fmt.Println("no images — run `thrive pull <image>` first")
-				return nil
-			}
-
-			fmt.Printf("%-50s %-22s %s\n", "REPOSITORY", "DIGEST", "LAYERS")
-			fmt.Println("────────────────────────────────────────────────────────────────────────────────")
+			rows := make([]imageRow, 0, len(imgs))
 			for _, img := range imgs {
-				fmt.Printf("%-50s %-22s %d\n", img.Ref, truncateDigest(img.Digest, 19), len(img.Layers))
+				rows = append(rows, imageRow{Ref: img.Ref, Digest: img.Digest, Layers: len(img.Layers)})
 			}
+			formatImagesTable(os.Stdout, rows)
 			return nil
 		},
 	}

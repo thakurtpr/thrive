@@ -5,6 +5,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -30,13 +31,7 @@ func ImagesCmd() *cobra.Command {
 			json.Unmarshal(data, &result)
 
 			imgs, _ := result["images"].([]any)
-			if len(imgs) == 0 {
-				fmt.Println("no images — run `thrive pull <image>` first")
-				return nil
-			}
-
-			fmt.Printf("%-50s %-22s %s\n", "REPOSITORY", "DIGEST", "LAYERS")
-			fmt.Println("────────────────────────────────────────────────────────────────────────────────")
+			rows := make([]imageRow, 0, len(imgs))
 			for _, i := range imgs {
 				im, ok := i.(map[string]any)
 				if !ok {
@@ -48,8 +43,9 @@ func ImagesCmd() *cobra.Command {
 				if lf, ok := im["layers"].(float64); ok {
 					layers = int(lf)
 				}
-				fmt.Printf("%-50s %-22s %d\n", ref, digest, layers)
+				rows = append(rows, imageRow{Ref: ref, Digest: digest, Layers: layers})
 			}
+			formatImagesTable(os.Stdout, rows)
 			return nil
 		},
 	}

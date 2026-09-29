@@ -23,9 +23,11 @@ func ImagesCmd() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "Error listing images: %v\n", err)
 				os.Exit(1)
 			}
+			rows := make([]imageRow, 0, len(images))
 			for _, img := range images {
-				fmt.Printf("%s\t%s\t%d layers\n", img.Ref, truncateDigest(img.Digest, 12), len(img.Layers))
+				rows = append(rows, imageRow{Ref: img.Ref, Digest: img.Digest, Layers: len(img.Layers)})
 			}
+			formatImagesTable(os.Stdout, rows)
 		},
 	}
 }

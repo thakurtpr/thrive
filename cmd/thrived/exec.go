@@ -521,13 +521,10 @@ func handleImages(ctx context.Context, req *Request, w io.Writer) {
 	}
 	var result []map[string]any
 	for _, img := range imgs {
-		digest := img.Digest
-		if len(digest) > 12 {
-			digest = digest[:12]
-		}
 		result = append(result, map[string]any{
-			"ref":    img.Ref,
-			"digest": digest,
+			"ref": img.Ref,
+			// Full digest: clients truncate for display (shared helper).
+			"digest": img.Digest,
 			"layers": len(img.Layers),
 		})
 	}

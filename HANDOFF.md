@@ -5,6 +5,26 @@
 
 ---
 
+## Session 2026-09-19 — images table unify + golden tests
+
+### What was done
+`thrive images` printed three different formats (linux tabs, darwin table,
+windows table on pre-truncated digests). Unified all three on one shared
+table helper with golden tests; daemon now sends full digests and every
+client truncates identically. (Process note: twice overwrote files with
+`write` instead of `edit` — recovered via git; always prefer `edit`.)
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `imageRow` + `formatImagesTable` (digest 19, empty hint); all three call sites delegate | `images_shared.go`, `images.go`, `images_stub.go`, `images_windows.go` |
+| 2 | Daemon sends full digests (display truncation is client-side) | `cmd/thrived/exec.go` |
+| 3 | Golden layout/empty tests (+ restored truncate tests) | `images_shared_test.go` |
+
+### Verification
+- Full `go test ./...` 13 ok, 0 FAIL; builds + vet CLEAN host/linux/windows; linux/windows `go test -c` compiles; pushed
+
+---
+
 ## Session 2026-09-19 — Fix-all pass, item 1: daemon bridge hardening
 
 ### What was done
