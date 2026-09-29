@@ -112,6 +112,7 @@ Markers chosen from exact CLI/engine output strings.
 ### Verification
 - `bash -n` clean; unit suite green; builds CLEAN
 - Live e2e runs in CI (pushed) — first run confirms the flow
+- CONFIRMED 2026-09-29: compose UP_OK/PS_OK/DOWN_OK all PASS in CI
 
 ---
 
