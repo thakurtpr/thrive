@@ -5,6 +5,22 @@
 
 ---
 
+## Session 2026-09-19 — Homebrew formula to v0.4.0
+
+### What was done
+Release follow-through: the formula still pointed at v0.1.1 (stale since
+May). Bumped url/version and re-hashed the v0.4.0 archive tarball
+(downloaded, verified contents, cleaned up). Ruby syntax OK.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | url/version/sha256 → v0.4.0 | `HomebrewFormula/thrive.rb` |
+
+### Verification
+- Tarball contents verified (top dir, go.mod, cmd/thrive); `ruby -c` OK; pushed
+
+---
+
 ## Session 2026-09-19 — inspect shapes unified (host-path leak fixed)
 
 ### What was done

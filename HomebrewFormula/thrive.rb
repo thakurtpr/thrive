@@ -1,9 +1,9 @@
 class Thrive < Formula
   desc "THakur Runtime Isolation Virtualization Engine - Daemonless container runtime"
   homepage "https://github.com/thakurtpr/thrive"
-  url "https://github.com/thakurtpr/thrive/archive/refs/tags/v0.1.1.tar.gz"
-  version "0.1.1"
-  sha256 "fd9fbc7b1fd0e7c115f2e3882d9f729f16c53fa406e415b3738bb52954416472"
+  url "https://github.com/thakurtpr/thrive/archive/refs/tags/v0.4.0.tar.gz"
+  version "0.4.0"
+  sha256 "c724f8e3d4dbc1dc27f97ddb686413ea509bf1a240d71d8fb055dd322827262d"
   license "MIT"
   head "https://github.com/thakurtpr/thrive.git"
 
