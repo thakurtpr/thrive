@@ -5,6 +5,25 @@
 
 ---
 
+## Session 2026-09-19 — inspect shapes unified (host-path leak fixed)
+
+### What was done
+`thrive inspect <image>` JSON differed per platform — and worse, Linux
+leaked host layer paths (`{"Digest":...,"Path":"/var/lib/..."}`) while the
+daemon returned lowercase digest/size. New shared `internal/inspect`
+package used by both; layers carry digest+size only.
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | `Container`/`Image` shapers + golden test (keys, JSON, no-leak, empty) | `internal/inspect/` (new) |
+| 2 | Linux CLI + daemon delegate (proxy passes through unchanged) | `cmd/thrive/commands/inspect.go`, `cmd/thrived/exec.go` |
+
+### Verification
+- New test PASS (14 packages ok total); full suite 0 FAIL
+- Builds + vet CLEAN host/linux/windows; linux `go test -c` compiles; pushed
+
+---
+
 ## Session 2026-09-19 — Live cosign verify tests (fake registry)
 
 ### What was done

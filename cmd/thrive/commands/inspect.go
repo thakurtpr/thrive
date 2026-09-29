@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/thakurprasadrout/thrive/internal/image"
+	"github.com/thakurprasadrout/thrive/internal/inspect"
 	"github.com/thakurprasadrout/thrive/internal/runtime"
 )
 
@@ -58,23 +59,16 @@ func inspectLocal(ctx context.Context, id string) (map[string]any, error) {
 		configData, _ := os.ReadFile(configPath)
 		var cfg map[string]any
 		_ = json.Unmarshal(configData, &cfg)
-		return map[string]any{
-			"type":   "container",
-			"id":     state.ID,
-			"status": state.Status,
-			"pid":    state.PID,
-			"config": cfg,
-		}, nil
+		return inspect.Container(state.ID, state.Status, state.PID, cfg), nil
 	}
 	if imgs, err := image.List(ctx); err == nil {
 		for _, img := range imgs {
 			if img.Ref == id || img.Digest == id {
-				return map[string]any{
-					"type":   "image",
-					"ref":    img.Ref,
-					"digest": img.Digest,
-					"layers": img.Layers,
-				}, nil
+				layers := make([]inspect.Layer, 0, len(img.Layers))
+				for _, l := range img.Layers {
+					layers = append(layers, inspect.Layer{Digest: l.Digest, Size: l.Size})
+				}
+				return inspect.Image(img.Ref, img.Digest, layers), nil
 			}
 		}
 	}

@@ -25,6 +25,7 @@ import (
 	"github.com/thakurprasadrout/thrive/internal/checkpoint"
 	"github.com/thakurprasadrout/thrive/internal/events"
 	"github.com/thakurprasadrout/thrive/internal/image"
+	thriveinspect "github.com/thakurprasadrout/thrive/internal/inspect"
 	"github.com/thakurprasadrout/thrive/internal/network"
 	"github.com/thakurprasadrout/thrive/internal/registry"
 	"github.com/thakurprasadrout/thrive/internal/runtime"
@@ -1003,16 +1004,13 @@ func handleInspect(ctx context.Context, req *Request, w io.Writer) {
 	if imgs, err := image.List(ctx); err == nil {
 		for _, img := range imgs {
 			if img.Ref == id || img.Digest == id {
-				var layers []map[string]any
+				layers := make([]thriveinspect.Layer, 0, len(img.Layers))
 				for _, l := range img.Layers {
-					layers = append(layers, map[string]any{"digest": l.Digest, "size": l.Size})
+					layers = append(layers, thriveinspect.Layer{Digest: l.Digest, Size: l.Size})
 				}
 				writeResponse(w, &Response{
-					ID: req.ID,
-					Result: map[string]any{
-						"type": "image", "ref": img.Ref,
-						"digest": img.Digest, "layers": layers,
-					},
+					ID:     req.ID,
+					Result: thriveinspect.Image(img.Ref, img.Digest, layers),
 				})
 				return
 			}

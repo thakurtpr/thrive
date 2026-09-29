@@ -17,6 +17,7 @@
 | cmd/thrive/commands | *_test.go | ~33% (host-measured; higher on Linux) | improved | shared output helpers at 95–100%; flag-parity locks; bridge-opts mapping tested; logic is thin by design |
 | internal/vm (desktop) | darwin_launcher_test.go, wsl2_launcher_test.go, hyperv_launcher_test.go, download_test.go, vsock_darwin_test.go | ~80% | stable | 28 tests, all PASS |
 | internal/signing | cosign_test.go | 79% | improved | live fake-registry roundtrip + wrong-key + missing-sig + offline bundle/SimpleSigning (host-measured) |
+| internal/inspect | inspect_test.go | 100% | new | golden shape/JSON tests incl. no-host-path-leak (all platforms) |
 
 **Overall: ~60–65% (portable measured on host; commands 22%→27% via shared-helper + parity tests; Linux CI gives the final number) — Target: 70%**
 
