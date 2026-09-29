@@ -5,6 +5,23 @@
 
 ---
 
+## Session 2026-09-19 — debian changelog to 0.4.0
+
+### What was done
+Same staleness class as the formula: `debian/changelog` still at 0.1.0
+(initial release). Added a 0.4.0 entry summarizing the release scope with
+a pointer to CHANGELOG.md. (No dpkg tools on this Mac to parse-verify;
+format follows the existing entry exactly.)
+
+| # | Change | Files |
+|---|--------|-------|
+| 1 | 0.4.0 changelog entry | `debian/changelog` |
+
+### Verification
+- Full suite green; pushed (CI Debian build unaffected — source-only change)
+
+---
+
 ## Session 2026-09-19 — Homebrew formula to v0.4.0
 
 ### What was done
