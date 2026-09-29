@@ -5,6 +5,19 @@
 
 ---
 
+## Session 2026-09-19 — Race-detector sweep (all portable packages)
+
+### What was done
+CI races Linux only, so ran `go test -race` locally on every portable
+suite: commands, signing, inspect, events, volume, buildx, contextstore,
+network, secrets, registry, image, vm — 12 suites, zero data races.
+No code changes needed; recorded as verification evidence.
+
+### Verification
+- `go test -race -count=1` green on all 12 portable packages (host); pushed
+
+---
+
 ## Session 2026-09-19 — debian changelog to 0.4.0
 
 ### What was done
