@@ -294,6 +294,27 @@ misparsed as the command (found live in CI). E2E now asserts the exec exit
 code before the diff assertion so a future exec regression is diagnosable
 instead of silent.
 
+## Orphaned-container reconciliation (2026-09-19)
+
+### Context
+Daemonless detached starters exit after Start, so no supervisor remains
+to reap the process and mark state stopped — `ps` showed running forever
+for orphaned containers (found via compose e2e: stop returned, ps still
+showed running, because the 10s-timeout SIGKILL landed after the starter
+was long gone and nothing recorded the death).
+
+### Decision
+`runtime.State` reconciles lazily: a "running" container whose PID is gone
+or zombie (via /proc, since kill(pid,0) wrongly reports zombies alive)
+flips to stopped with exit code -1 (unknown — nobody reaped it) and
+persists. Liveness is checked per read; PID reuse can still fool it
+(inherent to PID files, documented in code).
+
+### Tradeoffs
+`State` is no longer pure-read (writes on flip only; idempotent and atomic
+via temp+rename). Non-running states, PID 0, and live processes are
+untouched — zero behavior change for supervised containers.
+
 ## R3 (2026-09-19) — cosign verification is host-side
 
 ### Context

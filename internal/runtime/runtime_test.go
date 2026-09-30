@@ -6,9 +6,11 @@ package runtime
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"syscall"
 	"testing"
+	"time"
 )
 
 // TestSaveState_WritesStatusCreated verifies that saveState persists the
@@ -112,5 +114,64 @@ func TestParseSignal(t *testing.T) {
 		if got := ParseSignal(in); got != want {
 			t.Errorf("ParseSignal(%q): got %v want %v", in, got, want)
 		}
+	}
+}
+
+// TestProcessAlive verifies liveness detection incl. zombies and the
+// reaped (reparented-then-gone) case behind state reconciliation.
+func TestProcessAlive(t *testing.T) {
+	if !processAlive(os.Getpid()) {
+		t.Error("own pid: got dead, want alive")
+	}
+	if processAlive(1 << 20) {
+		t.Error("bogus pid: got alive, want dead")
+	}
+	// Exited, never-waited child: zombie (or reaped) → not alive.
+	cmd := exec.Command("true")
+	if err := cmd.Start(); err != nil {
+		t.Skipf("cannot fork: %v", err)
+	}
+	zombie := cmd.Process.Pid
+	dead := false
+	for i := 0; i < 200; i++ {
+		if !processAlive(zombie) {
+			dead = true
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cmd.Wait() //nolint:errcheck
+	if !dead {
+		t.Errorf("exited child pid %d: got alive, want dead", zombie)
+	}
+	// Reaped child: /proc entry gone → not alive.
+	if processAlive(zombie) {
+		t.Errorf("reaped pid %d: got alive, want dead", zombie)
+	}
+}
+
+// TestReconcileState_FlipsDead verifies orphaned running states become
+// stopped without touching live or non-running states.
+func TestReconcileState_FlipsDead(t *testing.T) {
+	dir := t.TempDir()
+	dead := &ContainerState{ID: "x", Status: "running", PID: 1 << 20}
+	if got := reconcileState(dir, dead); got.Status != "stopped" || got.ExitCode != -1 {
+		t.Errorf("dead container: got %+v", got)
+	}
+	if data, err := os.ReadFile(filepath.Join(dir, "state.json")); err != nil {
+		t.Errorf("reconciled state not persisted: %v", err)
+	} else {
+		var persisted ContainerState
+		if err := json.Unmarshal(data, &persisted); err != nil || persisted.Status != "stopped" {
+			t.Errorf("persisted state: got %s, %v", string(data), err)
+		}
+	}
+	live := &ContainerState{ID: "x", Status: "running", PID: os.Getpid()}
+	if got := reconcileState(dir, live); got.Status != "running" {
+		t.Errorf("live container: got %+v", got)
+	}
+	stopped := &ContainerState{ID: "x", Status: "stopped", PID: 1 << 20}
+	if got := reconcileState(dir, stopped); got.Status != "stopped" || got.ExitCode != 0 {
+		t.Errorf("stopped container touched: got %+v", got)
 	}
 }
