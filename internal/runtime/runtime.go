@@ -643,7 +643,54 @@ func State(ctx context.Context, id string) (*ContainerState, error) {
 	}
 
 	log.Debug("runtime.State: state loaded", telemetry.FieldString("containerID", id), telemetry.FieldString("status", state.Status))
-	return state, nil
+	return reconcileState(containerDir(id), state), nil
+}
+
+// reconcileState flips a "running" container whose process is gone (or a
+// zombie) to stopped. Detached starters exit after Start, so no supervisor
+// remains to reap the process and record the exit — without this, `ps`
+// shows running forever for orphaned containers. PID reuse can still fool
+// the check (inherent to PID-file tracking); the stale-PID window is small
+// in practice and out of scope.
+func reconcileState(dir string, state *ContainerState) *ContainerState {
+	if state.Status != "running" || state.PID <= 0 || processAlive(state.PID) {
+		return state
+	}
+	log := telemetry.Logger()
+	log.Info("runtime.State: reconciling dead container to stopped", telemetry.FieldInt("pid", state.PID))
+	// Flip status only: the exit code belongs to the reaper, which may
+	// still be about to record the true code (a fast-exiting foreground
+	// container must keep exit 0, not inherit an "unknown" marker).
+	state.Status = "stopped"
+	if err := saveState(dir, state); err != nil {
+		log.Error("runtime.State: reconciled saveState failed", telemetry.FieldError(err))
+	}
+	return state
+}
+
+// processAlive reports whether pid names a live, non-zombie process via
+// /proc. Zombies (reparented, never reaped) count as dead: kill(pid, 0)
+// would wrongly report them alive.
+func processAlive(pid int) bool {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return false
+	}
+	// comm may contain spaces/parens; the state letter follows the last ')'.
+	s := string(data)
+	i := strings.LastIndex(s, ")")
+	if i < 0 {
+		return false
+	}
+	fields := strings.Fields(s[i+1:])
+	if len(fields) == 0 {
+		return false
+	}
+	switch fields[0] {
+	case "Z", "X", "x":
+		return false
+	}
+	return true
 }
 
 func loadState(id string) (*ContainerState, error) {

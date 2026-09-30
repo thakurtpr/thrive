@@ -225,6 +225,11 @@ func Stop(ctx context.Context, cf *ComposeFile, projectName string, targets []st
 				}
 			}
 			_ = runtime.Kill(ctx, id, syscall.SIGKILL)
+			// Wait (bounded) until the stopped state is observable: without
+			// this, a racing `ps` still shows running after stop returns.
+			waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			_, _ = runtime.Wait(waitCtx, id)
+			cancel()
 			fmt.Printf("  stopped %s\n", id)
 		}
 	}

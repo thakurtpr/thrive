@@ -878,6 +878,11 @@ func handleStop(ctx context.Context, req *Request, w io.Writer) {
 	}
 
 	_ = runtime.Kill(ctx, id, syscall.SIGKILL)
+	// Bounded wait until stopped is observable (same contract as
+	// compose.Stop: when stop returns, `ps` shows stopped).
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, _ = runtime.Wait(waitCtx, id)
 	writeResponse(w, &Response{ID: req.ID, Result: map[string]any{}})
 }
 
