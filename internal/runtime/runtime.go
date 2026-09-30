@@ -658,8 +658,10 @@ func reconcileState(dir string, state *ContainerState) *ContainerState {
 	}
 	log := telemetry.Logger()
 	log.Info("runtime.State: reconciling dead container to stopped", telemetry.FieldInt("pid", state.PID))
+	// Flip status only: the exit code belongs to the reaper, which may
+	// still be about to record the true code (a fast-exiting foreground
+	// container must keep exit 0, not inherit an "unknown" marker).
 	state.Status = "stopped"
-	state.ExitCode = -1 // unknown: nobody reaped the exit status
 	if err := saveState(dir, state); err != nil {
 		log.Error("runtime.State: reconciled saveState failed", telemetry.FieldError(err))
 	}

@@ -306,7 +306,9 @@ was long gone and nothing recorded the death).
 ### Decision
 `runtime.State` reconciles lazily: a "running" container whose PID is gone
 or zombie (via /proc, since kill(pid,0) wrongly reports zombies alive)
-flips to stopped with exit code -1 (unknown — nobody reaped it) and
+flips to stopped (preserving the recorded exit code — the reaper owns
+exit codes and may still record the true one for fast-exiting containers)
+and
 persists. Liveness is checked per read; PID reuse can still fool it
 (inherent to PID files, documented in code).
 

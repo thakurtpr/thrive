@@ -155,7 +155,7 @@ func TestProcessAlive(t *testing.T) {
 func TestReconcileState_FlipsDead(t *testing.T) {
 	dir := t.TempDir()
 	dead := &ContainerState{ID: "x", Status: "running", PID: 1 << 20}
-	if got := reconcileState(dir, dead); got.Status != "stopped" || got.ExitCode != -1 {
+	if got := reconcileState(dir, dead); got.Status != "stopped" {
 		t.Errorf("dead container: got %+v", got)
 	}
 	if data, err := os.ReadFile(filepath.Join(dir, "state.json")); err != nil {
